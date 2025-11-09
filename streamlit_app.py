@@ -136,15 +136,6 @@ if run_valuation:
         "year_built": year_built
     }
     
-    # Create placeholder for nodes
-    node_placeholders = {
-        "search_planning": st.empty(),
-        "search_execution": st.empty(),
-        "preprocessing": st.empty(),
-        "valuation": st.empty(),
-        "results": st.empty()
-    }
-    
     # Show initial property info
     with st.container():
         st.subheader("📍 Property Information")
@@ -162,36 +153,112 @@ if run_valuation:
         st.session_state.current_node = None
     
     try:
-        # NODE 1: Search Planning
-        with node_placeholders["search_planning"].container():
-            with st.spinner("🔍 **NODE 1: Generating Search Queries...**"):
-                time.sleep(0.5)
-                st.session_state.current_node = "search_planning"
-            st.success("✅ NODE 1: Search Plan Generated")
+        # Node display mapping
+        node_config = {
+            "query_analysis": {
+                "display_name": "Query Analysis",
+                "emoji": "🔍",
+                "description": "Analyzing your search query..."
+            },
+            "zip_discovery": {
+                "display_name": "ZIP Discovery",
+                "emoji": "📍",
+                "description": "Discovering nearby ZIP codes..."
+            },
+            "scraping": {
+                "display_name": "Zillow Scraping",
+                "emoji": "🕷️",
+                "description": "Scraping property data from Zillow..."
+            },
+            "preprocessing": {
+                "display_name": "Data Preprocessing",
+                "emoji": "🔧",
+                "description": "Filtering and validating data..."
+            },
+            "valuation": {
+                "display_name": "Valuation",
+                "emoji": "💰",
+                "description": "Generating final valuation..."
+            }
+        }
         
-        # NODE 2: Search Execution & Extraction
-        with node_placeholders["search_execution"].container():
-            with st.spinner("🔍 **NODE 2: Executing Searches & Extracting Data...**"):
-                time.sleep(0.5)
-                st.session_state.current_node = "search_execution"
-            st.success("✅ NODE 2: Searches Completed")
+        # Track completed nodes
+        completed_nodes = set()
         
-        # NODE 3: Preprocessing
-        with node_placeholders["preprocessing"].container():
-            with st.spinner("🔧 **NODE 3: Preprocessing & Filtering Comparables...**"):
-                time.sleep(0.5)
-                st.session_state.current_node = "preprocessing"
-            st.success("✅ NODE 3: Data Preprocessed")
+        # Show all nodes with initial states
+        node_status_containers = {}
+        for node_key in ["query_analysis", "zip_discovery", "scraping", "preprocessing", "valuation"]:
+            node_status_containers[node_key] = st.empty()
+            with node_status_containers[node_key].container():
+                st.markdown(f"""
+                    <div style="padding: 1rem; background-color: #f0f2f6; border-radius: 0.5rem; border-left: 4px solid #888; margin-bottom: 0.5rem;">
+                        <span style="font-size: 1.2rem;">{node_config[node_key]['emoji']} {node_config[node_key]['display_name']}</span>
+                        <span style="float: right; color: #888;">⏳ Pending...</span>
+                    </div>
+                """, unsafe_allow_html=True)
         
-        # NODE 4: Valuation
-        with node_placeholders["valuation"].container():
-            with st.spinner("💰 **NODE 4: Generating Valuation & Analysis...**"):
-                time.sleep(0.5)
-                st.session_state.current_node = "valuation"
-            st.success("✅ NODE 4: Valuation Complete")
+        # Create a custom wrapper to intercept workflow execution
+        class NodeTracker:
+            def __init__(self):
+                self.nodes_completed = set()
+            
+            def update_node_status(self, node_name, status="active"):
+                """Update UI for a specific node"""
+                if status == "active":
+                    icon = "⏳"
+                    bg_color = "#fff8e5"
+                    border_color = "#ffaa00"
+                    status_text = "Processing..."
+                elif status == "completed":
+                    icon = "✅"
+                    bg_color = "#e5ffe5"
+                    border_color = "#00cc00"
+                    status_text = "Completed"
+                else:
+                    icon = "⏳"
+                    bg_color = "#f0f2f6"
+                    border_color = "#888"
+                    status_text = "Pending..."
+                
+                config = node_config.get(node_name, {})
+                with node_status_containers[node_name].container():
+                    st.markdown(f"""
+                        <div style="padding: 1rem; background-color: {bg_color}; border-radius: 0.5rem; border-left: 4px solid {border_color}; margin-bottom: 0.5rem;">
+                            <span style="font-size: 1.2rem;">{icon} {config.get('display_name', node_name)}</span>
+                            <span style="float: right; font-size: 0.9rem; color: {border_color};">{status_text}</span>
+                            <br/>
+                            <span style="font-size: 0.85rem; color: #666;">{config.get('description', '')}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+        
+        tracker = NodeTracker()
         
         # Run the actual valuation
         graph = RealEstateValuationGraph()
+        
+        # Intercept node updates by monkey-patching (we'll show progress)
+        original_node_funcs = {
+            "query_analysis": graph._node_query_analysis,
+            "zip_discovery": graph._node_zip_discovery,
+            "scraping": graph._node_scraping,
+            "preprocessing": graph._node_preprocessing,
+            "valuation": graph._node_valuation
+        }
+        
+        # Wrap each node function to update UI
+        def make_tracked_node(node_name, original_func):
+            def tracked_node(state):
+                tracker.update_node_status(node_name, "active")
+                result = original_func(state)
+                tracker.update_node_status(node_name, "completed")
+                return result
+            return tracked_node
+        
+        for node_name, original_func in original_node_funcs.items():
+            setattr(graph, f"_node_{node_name}", make_tracked_node(node_name, original_func))
+        
+        # Rebuild graph with tracked nodes
+        graph.graph = graph._build_graph()
         
         # Create a user query from the address
         user_query = f"Value my property at {address}"
@@ -275,10 +342,14 @@ if run_valuation:
         # Price Estimate Section
         st.markdown("## 💰 Estimated Price Range")
         col1, col2, col3, col4 = st.columns(4)
+        estimated_low = float(estimated_low) if estimated_low else 0
+        estimated_mid = float(estimated_mid) if estimated_mid else 0
+        estimated_high = float(estimated_high) if estimated_high else 0
         col1.metric("Low Estimate", f"${estimated_low:,.0f}")
         col2.metric("Mid Estimate", f"${estimated_mid:,.0f}", delta=f"{percentage_diff:+.1f}%")
         col3.metric("High Estimate", f"${estimated_high:,.0f}")
         recommended = estimated_value.get('recommended_listing_price', estimated_mid)
+        recommended = float(recommended) if recommended else estimated_mid
         col4.metric("Recommended Listing", f"${recommended:,.0f}")
         
         st.markdown("---")
@@ -394,8 +465,10 @@ if run_valuation:
             if comparable_sales:
                 comp_data = []
                 for comp in comparable_sales[:20]:
-                    price = comp.get('price', 0)
-                    sqft = comp.get('living_area_sqft', 1)
+                    price = comp.get('price') or 0
+                    sqft = comp.get('living_area_sqft') or 1
+                    price = float(price) if price else 0
+                    sqft = float(sqft) if sqft else 1
                     comp_data.append({
                         "Address": comp.get('address', 'N/A'),
                         "Price": f"${price:,.0f}",
