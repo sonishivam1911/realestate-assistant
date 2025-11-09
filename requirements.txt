@@ -1,0 +1,16 @@
+langgraph
+langchain
+langchain-groq
+langchain-community
+duckduckgo-search
+beautifulsoup4
+lxml
+requests
+pydantic
+python-dotenv
+streamlit
+pandas
+langsmith
+pyzill
+json-repair
+geopy
