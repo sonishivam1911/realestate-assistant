@@ -6,9 +6,14 @@ import json
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Configure logging to reduce noise
 logging.getLogger("geopy").setLevel(logging.WARNING)
+
+# Thread-safe lock for print statements
+print_lock = threading.Lock()
 
 
 class ZillowScraperAgent:
@@ -115,32 +120,61 @@ class ZillowScraperAgent:
             'total_for_sale': 0
         }
         
-        # Scrape each ZIP
-        for i, zip_code in enumerate(all_zips, 1):
-            print(f"[{i}/{len(all_zips)}] Scraping ZIP {zip_code}...")
-            
+        # Scrape all ZIPs in parallel using ThreadPoolExecutor
+        print(f"🚀 Starting parallel scraping with {min(len(all_zips), 8)} workers...\n")
+        
+        def scrape_zip(zip_index_tuple):
+            """Helper function to scrape a single ZIP code (for parallel execution)"""
+            i, zip_code = zip_index_tuple
             try:
                 # Scrape sold homes
                 sold = self._scrape_sold_homes(zip_code, cutoff_date, asking_price, target_property)
-                all_sold_homes.extend(sold)
                 
                 # Scrape for-sale homes
                 for_sale = self._scrape_for_sale_homes(zip_code, asking_price, target_property)
-                all_for_sale_homes.extend(for_sale)
                 
-                print(f"   ✅ Sold: {len(sold)} | For Sale: {len(for_sale)}")
-                
-                scraping_stats['successful_zips'] += 1
-                scraping_stats['total_sold'] += len(sold)
-                scraping_stats['total_for_sale'] += len(for_sale)
-                
-                # Rate limiting - be nice to Zillow
-                time.sleep(3)
-                
+                return {
+                    'zip_code': zip_code,
+                    'index': i,
+                    'sold': sold,
+                    'for_sale': for_sale,
+                    'success': True,
+                    'error': None
+                }
             except Exception as e:
-                print(f"   ❌ Failed: {str(e)}")
-                scraping_stats['failed_zips'] += 1
-                continue
+                return {
+                    'zip_code': zip_code,
+                    'index': i,
+                    'sold': [],
+                    'for_sale': [],
+                    'success': False,
+                    'error': str(e)
+                }
+        
+        # Execute all ZIPs in parallel with controlled concurrency
+        with ThreadPoolExecutor(max_workers=min(len(all_zips), 8)) as executor:
+            futures = {
+                executor.submit(scrape_zip, (i, zip_code)): i 
+                for i, zip_code in enumerate(all_zips, 1)
+            }
+            
+            # Process results as they complete
+            for future in as_completed(futures):
+                result = future.result()
+                i = result['index']
+                zip_code = result['zip_code']
+                
+                with print_lock:
+                    if result['success']:
+                        print(f"[{i}/{len(all_zips)}] ✅ {zip_code}: {len(result['sold'])} sold | {len(result['for_sale'])} for-sale")
+                        all_sold_homes.extend(result['sold'])
+                        all_for_sale_homes.extend(result['for_sale'])
+                        scraping_stats['successful_zips'] += 1
+                        scraping_stats['total_sold'] += len(result['sold'])
+                        scraping_stats['total_for_sale'] += len(result['for_sale'])
+                    else:
+                        print(f"[{i}/{len(all_zips)}] ❌ {zip_code}: {result['error']}")
+                        scraping_stats['failed_zips'] += 1
         
         print(f"\n{'='*60}")
         print(f"📊 SCRAPING COMPLETE:")
@@ -168,13 +202,11 @@ class ZillowScraperAgent:
         if not coords:
             print(f"   ❌ Cannot scrape {zip_code} - no coordinates")
             return []
-        
+
         sw_lat, sw_long, ne_lat, ne_long = coords
         
-        # For search_value, use a city name instead of empty string for sold properties
-        search_value = "Austin"  # Use city name for better sold results
-        
-        # Get property filters from target_property
+        # Use the ZIP code itself as search_value for geographic accuracy
+        search_value = zip_code        # Get property filters from target_property
         min_beds = target_property.get('bedrooms') - 1 if target_property and target_property.get('bedrooms') else None
         max_beds = target_property.get('bedrooms') + 1 if target_property and target_property.get('bedrooms') else None
         min_baths = target_property.get('bathrooms') - 1 if target_property and target_property.get('bathrooms') else None
@@ -232,8 +264,8 @@ class ZillowScraperAgent:
         
         sw_lat, sw_long, ne_lat, ne_long = coords
         
-        # For search_value, use empty string (let coordinates do the work)
-        search_value = ""  # Empty string lets the coordinates define the search area
+        # Use the ZIP code itself as search_value for geographic accuracy
+        search_value = zip_code
         
         # Get property filters from target_property
         min_beds = target_property.get('bedrooms') - 1 if target_property and target_property.get('bedrooms') else None
@@ -321,13 +353,38 @@ class ZillowScraperAgent:
                         date_sold_str = date_sold.isoformat()
                     
                     # Build clean property JSON using soldPrice for sold properties
+                    # For sold properties, try multiple price sources in order of preference
+                    price = None
+                    sold_price = listing.get('soldPrice')
+                    regular_price = listing.get('price')
+                    zestimate = listing.get('zestimate')
+                    
+                    # Try to get price from hdpData.homeInfo if available
+                    hdp_data = listing.get('hdpData', {})
+                    home_info = hdp_data.get('homeInfo', {}) if hdp_data else {}
+                    tax_assessed = home_info.get('taxAssessedValue') if home_info else None
+                    
+                    # Priority order for sold properties:
+                    # 1. soldPrice (if not empty)
+                    # 2. price (if not empty) 
+                    # 3. zestimate
+                    # 4. taxAssessedValue (as last resort)
+                    if sold_price and str(sold_price).strip():
+                        price = sold_price
+                    elif regular_price and str(regular_price).strip():
+                        price = regular_price
+                    elif zestimate:
+                        price = zestimate
+                    elif tax_assessed:
+                        price = tax_assessed
+                    
                     prop = {
                         "zpid": listing.get('zpid'),
                         "address": listing.get('address'),
                         "city": listing.get('addressCity'),
                         "state": listing.get('addressState'),
                         "zipcode": listing.get('addressZipcode', zip_code),
-                        "price": listing.get('soldPrice') or listing.get('price'),  # Use soldPrice for sold properties
+                        "price": price,
                         "bedrooms": listing.get('beds'),  # Note: 'beds' not 'bedrooms'
                         "bathrooms": listing.get('baths'),  # Note: 'baths' not 'bathrooms'
                         "living_area_sqft": listing.get('area'),
@@ -341,7 +398,11 @@ class ZillowScraperAgent:
                         "raw_status": listing.get('rawHomeStatusCd'),
                         "latitude": listing.get('latLong', {}).get('latitude') if listing.get('latLong') else None,
                         "longitude": listing.get('latLong', {}).get('longitude') if listing.get('latLong') else None,
-                        "url": f"https://www.zillow.com{listing.get('detailUrl', '')}"
+                        "url": f"https://www.zillow.com{listing.get('detailUrl', '')}",
+                        "price_source": "soldPrice" if sold_price and str(sold_price).strip() else 
+                                      "price" if regular_price and str(regular_price).strip() else
+                                      "zestimate" if zestimate else
+                                      "taxAssessedValue" if tax_assessed else "unknown"
                     }
                     
                     # Ensure numeric fields are properly converted

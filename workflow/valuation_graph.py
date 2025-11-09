@@ -243,6 +243,8 @@ class RealEstateValuationGraph:
                 target_property
             )
             
+            print(f"Valuation Report: {valuation_report}\n")
+            
             # Update state
             state['valuation_report'] = valuation_report
             

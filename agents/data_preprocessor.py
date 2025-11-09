@@ -19,6 +19,7 @@ class DataPreprocessorAgent:
         self.max_price = 50000000
         self.min_sqft = 200
         self.max_sqft = 50000
+        self.valid_states = ['TX', 'CA', 'FL', 'NY', 'NJ', 'PA', 'IL', 'OH', 'GA', 'NC', 'VA', 'MA', 'WA', 'AZ', 'TN', 'IN', 'MO', 'MD', 'WI', 'CO', 'MN', 'SC', 'AL', 'LA', 'KY', 'OR', 'OK', 'CT', 'UT', 'IA', 'NV', 'AR', 'MS', 'KS', 'NM', 'NE', 'ID', 'WV', 'HI', 'NH', 'ME', 'MT', 'RI', 'DE', 'SD', 'ND', 'AK', 'VT', 'WY']
     
     def preprocess_data(self, scraped_data: Dict, target_property: Dict = None) -> Dict:
         """
@@ -45,13 +46,13 @@ class DataPreprocessorAgent:
         
         # Filter sold homes
         print("🧹 Filtering sold homes...")
-        filtered_sold, sold_excluded = self._filter_properties(sold_homes)
+        filtered_sold, sold_excluded = self._filter_properties(sold_homes, target_property)
         print(f"   ✅ Kept: {len(filtered_sold)}")
         print(f"   ❌ Excluded: {len(sold_excluded)}\n")
         
-        # Filter for-sale homes
+        # Filter for-sale homes  
         print("🧹 Filtering for-sale homes...")
-        filtered_for_sale, for_sale_excluded = self._filter_properties(for_sale_homes)
+        filtered_for_sale, for_sale_excluded = self._filter_properties(for_sale_homes, target_property)
         print(f"   ✅ Kept: {len(filtered_for_sale)}")
         print(f"   ❌ Excluded: {len(for_sale_excluded)}\n")
         
@@ -71,6 +72,21 @@ class DataPreprocessorAgent:
             len(sold_excluded),
             len(for_sale_excluded)
         )
+        
+        # Log exclusion summary
+        exclusion_summary = self._count_exclusion_reasons(sold_excluded + for_sale_excluded)
+        if exclusion_summary:
+            print("📊 Property Exclusion Summary:")
+            for reason, count in exclusion_summary.items():
+                print(f"   • {reason.replace('_', ' ').title()}: {count} properties")
+        
+        # Log quality metrics
+        print(f"\n📈 Data Quality Metrics:")
+        total_properties = len(sold_homes) + len(for_sale_homes)
+        kept_properties = len(filtered_sold) + len(filtered_for_sale)
+        print(f"   • Overall Retention Rate: {kept_properties}/{total_properties} ({kept_properties/max(total_properties,1)*100:.1f}%)")
+        print(f"   • Sold Homes Retention: {len(filtered_sold)}/{len(sold_homes)} ({len(filtered_sold)/max(len(sold_homes),1)*100:.1f}%)")
+        print(f"   • For-Sale Retention: {len(filtered_for_sale)}/{len(for_sale_homes)} ({len(filtered_for_sale)/max(len(for_sale_homes),1)*100:.1f}%)")
         
         print(f"\n✅ Preprocessing Complete:")
         print(f"   • Quality Score: {quality_score*100:.0f}%")
@@ -94,30 +110,64 @@ class DataPreprocessorAgent:
             "preprocessing_timestamp": datetime.now().isoformat()
         }
     
-    def _filter_properties(self, properties: List[Dict]) -> tuple:
-        """Filter properties based on data quality"""
+    def _filter_properties(self, properties: List[Dict], target_property: Dict = None) -> tuple:
+        """Filter properties based on data quality and geographic relevance with detailed logging"""
         
         filtered = []
         excluded = []
         
-        for prop in properties:
-            exclusion_reason = self._should_exclude(prop)
+        # Determine target state from target property
+        target_state = None
+        if target_property:
+            target_address = target_property.get('address', '')
+            target_state = self._extract_state_from_address(target_address)
+            if target_state:
+                print(f"   🎯 Target State: {target_state} (from '{target_address}')")
+        
+        print(f"   🔍 Analyzing {len(properties)} properties...")
+        
+        for i, prop in enumerate(properties):
+            exclusion_reason = self._should_exclude(prop, target_state)
             
             if exclusion_reason:
                 prop['exclusion_reason'] = exclusion_reason
                 excluded.append(prop)
+                
+                # Log excluded properties with details
+                if i < 5:  # Show details for first 5 excluded properties
+                    address = prop.get('address', 'Unknown Address')[:50]
+                    price = prop.get('price', 'N/A')
+                    sqft = prop.get('living_area_sqft', 'N/A')
+                    print(f"      ❌ {address} - Excluded: {exclusion_reason}")
+                    print(f"         Price: {price}, Sqft: {sqft}")
             else:
                 filtered.append(prop)
+                
+                # Log first few accepted properties for transparency
+                if len(filtered) <= 5:
+                    address = prop.get('address', 'Unknown Address')[:50]
+                    price = prop.get('price', 0)
+                    sqft = prop.get('living_area_sqft', 0)
+                    beds = prop.get('bedrooms', 0)
+                    baths = prop.get('bathrooms', 0)
+                    price_per_sqft = prop.get('price_per_sqft', 0)
+                    print(f"      ✅ {address}")
+                    print(f"         ${price:,} | {sqft:,} sqft | {beds}bed/{baths}bath | ${price_per_sqft:.0f}/sqft")
+        
+        # Log summary of filtering results
+        if len(excluded) > 5:
+            print(f"      ... and {len(excluded) - 5} more excluded properties")
         
         return filtered, excluded
     
-    def _should_exclude(self, prop: Dict) -> str:
+    def _should_exclude(self, prop: Dict, target_state: str = None) -> str:
         """Check if property should be excluded, return reason if yes"""
         
         # Must have price
-        if not prop.get('price'):
+        price = prop.get('price')
+        if not price or (isinstance(price, str) and not price.strip()):
             return "missing_price"
-        
+
         # Price must be reasonable
         if prop['price'] < self.min_price or prop['price'] > self.max_price:
             return "price_out_of_range"
@@ -139,9 +189,40 @@ class DataPreprocessorAgent:
         if not prop.get('bedrooms') or not prop.get('bathrooms'):
             return "missing_basic_info"
         
+        # State filtering - must be in same state as target property
+        if target_state:
+            prop_address = prop.get('address', '')
+            prop_state = self._extract_state_from_address(prop_address)
+            
+            if not prop_state:
+                return "missing_state_info"
+            
+            if prop_state != target_state:
+                return f"different_state_{prop_state}_vs_{target_state}"
+        
         # All checks passed
         return None
     
+    def _extract_state_from_address(self, address: str) -> str:
+        """Extract state code from property address"""
+        import re
+        
+        if not address:
+            return None
+            
+        # Look for state patterns in address: ", TX ", ", TX 78701", etc.
+        # Common pattern: ", STATE " or ", STATE zipcode"
+        state_pattern = r',\s*([A-Z]{2})\s*(?:\d{5})?(?:,|$)'
+        match = re.search(state_pattern, address)
+        
+        if match:
+            state_code = match.group(1)
+            # Validate it's a real state code
+            if state_code in self.valid_states:
+                return state_code
+        
+        return None
+
     def _calculate_market_stats(self, sold_homes: List[Dict], for_sale_homes: List[Dict]) -> Dict:
         """Calculate market-wide statistics"""
         
@@ -199,7 +280,15 @@ class DataPreprocessorAgent:
             return "stable"
     
     def _rank_comparables(self, sold_homes: List[Dict], target: Dict) -> List[Dict]:
-        """Rank comparables by similarity to target property"""
+        """Rank comparables by similarity to target property with detailed logging"""
+        
+        print(f"   📋 Target Property for Comparison:")
+        print(f"      Address: {target.get('address', 'N/A')}")
+        print(f"      Specs: {target.get('bedrooms', 0)}bed/{target.get('bathrooms', 0)}bath, {target.get('sqft', 0):,} sqft")
+        print(f"      Asking: ${target.get('asking_price', 0):,}")
+        print()
+        
+        print(f"   🎯 Calculating similarity scores for {len(sold_homes)} properties...")
         
         for home in sold_homes:
             similarity_score = self._calculate_similarity(home, target)
@@ -208,6 +297,26 @@ class DataPreprocessorAgent:
         # Sort by similarity (highest first)
         sold_homes.sort(key=lambda x: x.get('similarity_score', 0), reverse=True)
         
+        # Log top comparables
+        print(f"\n   🏆 TOP COMPARABLES (by similarity):")
+        for i, home in enumerate(sold_homes[:10]):  # Show top 10
+            address = home.get('address', 'Unknown Address')[:45]
+            price = home.get('price', 0)
+            sqft = home.get('living_area_sqft', 0)
+            beds = home.get('bedrooms', 0)
+            baths = home.get('bathrooms', 0)
+            similarity = home.get('similarity_score', 0)
+            price_per_sqft = home.get('price_per_sqft', 0)
+            
+            # Calculate key differences for logging
+            sqft_diff = abs(sqft - target.get('sqft', 0)) / max(target.get('sqft', 1), 1) * 100
+            bed_diff = abs(beds - target.get('bedrooms', 0)) if beds else 0
+            bath_diff = abs(baths - target.get('bathrooms', 0)) if baths else 0
+            
+            print(f"      #{i+1:2d}. {address}")
+            print(f"          ${price:,} | {sqft:,}sqft | {beds}bed/{baths}bath | ${price_per_sqft:.0f}/sqft")
+            print(f"          Similarity: {similarity:.2f} | Diffs: {sqft_diff:.0f}% sqft, {bed_diff} beds, {bath_diff:.1f} baths")
+            
         return sold_homes
     
     def _calculate_similarity(self, comp: Dict, target: Dict) -> float:

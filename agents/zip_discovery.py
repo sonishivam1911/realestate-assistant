@@ -1,4 +1,4 @@
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 import re
 from scrapers.duckduckgo_search import DuckDuckGoSearcher
 from langchain_groq import ChatGroq
@@ -7,8 +7,9 @@ from prompts.zipExtractionPrompt import get_zip_extraction_prompt_template
 
 class ZipDiscoveryAgent:
     """
-    Executes DuckDuckGo searches to discover neighboring ZIP codes
+    Executes DuckDuckGo searches to discover neighboring ZIP codes WITHIN THE SAME STATE
     Uses LLM to extract and validate ZIP codes from search results
+    Focuses on 5-6 mile radius for comprehensive local market data
     """
     
     def __init__(self, model_name: str = "llama-3.1-8b-instant"):
@@ -58,8 +59,8 @@ class ZipDiscoveryAgent:
         
         print(f"\n✅ ZIP Discovery Complete:")
         print(f"   Primary ZIP: {primary_zip}")
-        print(f"   Nearby ZIPs: {len(validated_zips)}")
-        print(f"   Total ZIPs: {len(validated_zips) + 1}")
+        print(f"   Nearby ZIPs (same state, 5-6 mile radius): {len(validated_zips)}")
+        print(f"   Total ZIPs for analysis: {len(validated_zips) + 1}")
         print(f"   ZIPs: {', '.join(sorted(validated_zips))}")
         print(f"{'='*80}\n")
         
@@ -127,6 +128,9 @@ class ZipDiscoveryAgent:
         
         validated = []
         
+        # Get expected state from primary ZIP
+        expected_state = self._get_zip_state(primary_zip)
+        
         for zip_code in zips:
             # Skip primary ZIP
             if zip_code == primary_zip:
@@ -136,6 +140,36 @@ class ZipDiscoveryAgent:
             if len(zip_code) == 5 and zip_code.isdigit():
                 zip_int = int(zip_code)
                 if 500 <= zip_int <= 99950:
-                    validated.append(zip_code)
+                    # Additional state validation if we know the expected state
+                    if expected_state:
+                        zip_state = self._get_zip_state(zip_code)
+                        if zip_state and zip_state.upper() == expected_state.upper():
+                            validated.append(zip_code)
+                        else:
+                            print(f"   ⚠️  Excluding {zip_code} (different state: {zip_state} vs {expected_state})")
+                    else:
+                        validated.append(zip_code)
         
         return validated
+    
+    def _get_zip_state(self, zip_code: str) -> Optional[str]:
+        """Get the state for a ZIP code using basic ZIP code ranges"""
+        if not zip_code or len(zip_code) != 5:
+            return None
+        
+        zip_int = int(zip_code)
+        
+        # Basic ZIP code to state mapping (first digit patterns)
+        if 73301 <= zip_int <= 73399 or 78701 <= zip_int <= 78799:
+            return "TX"  # Texas
+        elif 35000 <= zip_int <= 36999:
+            return "AL"  # Alabama  
+        elif 90000 <= zip_int <= 96699:
+            return "CA"  # California
+        elif 30000 <= zip_int <= 31999:
+            return "GA"  # Georgia
+        elif 33000 <= zip_int <= 34999:
+            return "FL"  # Florida
+        # Add more state mappings as needed
+        
+        return None

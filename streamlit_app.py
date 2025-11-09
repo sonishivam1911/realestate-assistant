@@ -208,207 +208,218 @@ if run_valuation:
         
         st.markdown("---")
         
-        # RESULTS SECTION
-        with node_placeholders["results"].container():
-            # Verdict Section - Large and Prominent
-            st.markdown("## 📊 VALUATION VERDICT")
+        # RESULTS SECTION - Display valuation results properly
+        st.markdown("## 🎉 VALUATION COMPLETE!")
+        
+        # Extract valuation data with proper keys
+        valuation_report = result.get('valuation_report', {})
+        estimated_value = valuation_report.get('estimated_value', {})
+        estimated_mid = estimated_value.get('mid', 0)
+        estimated_low = estimated_value.get('low', 0)
+        estimated_high = estimated_value.get('high', 0)
+        
+        # Calculate verdict
+        if estimated_mid > 0 and asking_price > 0:
+            difference = estimated_mid - asking_price
+            percentage_diff = (difference / asking_price) * 100
             
-            vs_asking = valuation_report.get('vs_asking_price', {})
-            verdict = vs_asking.get('verdict', 'fair').upper()
-            estimated_mid = valuation_report.get('estimated_price_range', {}).get('mid', 0)
-            asking = vs_asking.get('asking_price', 0)
-            difference = vs_asking.get('difference', 0)
-            percentage_diff = vs_asking.get('percentage_diff', 0)
-            
-            # Determine verdict styling
-            verdict_color = "#ff4444"
-            verdict_bg = "ffe5e5"
-            verdict_icon = "📉"
-            if verdict == "UNDERPRICED":
+            if percentage_diff > 10:
+                verdict = "UNDERPRICED"
                 verdict_color = "#00cc00"
                 verdict_bg = "e5ffe5"
                 verdict_icon = "📈"
-            elif verdict == "FAIR":
+            elif percentage_diff < -10:
+                verdict = "OVERPRICED"
+                verdict_color = "#ff4444"
+                verdict_bg = "ffe5e5"
+                verdict_icon = "📉"
+            else:
+                verdict = "FAIR"
                 verdict_color = "#ffaa00"
                 verdict_bg = "fffae5"
                 verdict_icon = "➡️"
+        else:
+            verdict = "FAIR"
+            verdict_color = "#ffaa00"
+            verdict_bg = "fffae5"
+            verdict_icon = "➡️"
+            difference = 0
+            percentage_diff = 0
+        
+        # Verdict Card - Large and Prominent
+        st.markdown("## 📊 VALUATION VERDICT")
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown(f"""
+                <div style="background-color: #{verdict_bg}; padding: 2rem; border-radius: 0.5rem; border-left: 8px solid {verdict_color};">
+                    <h2 style="color: {verdict_color}; margin: 0;">🎯 {verdict}</h2>
+                    <p style="font-size: 1.5rem; color: {verdict_color}; margin: 0.5rem 0;">
+                        Asking: <strong>${asking_price:,.0f}</strong> | Estimated: <strong>${estimated_mid:,.0f}</strong>
+                    </p>
+                    <p style="font-size: 1.2rem; color: {verdict_color}; margin: 0;">
+                        Difference: <strong>${difference:+,.0f} ({percentage_diff:+.1f}%)</strong>
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+                <div style="display: flex; align-items: center; justify-content: center; font-size: 3rem;">
+                    {verdict_icon}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Price Estimate Section
+        st.markdown("## 💰 Estimated Price Range")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Low Estimate", f"${estimated_low:,.0f}")
+        col2.metric("Mid Estimate", f"${estimated_mid:,.0f}", delta=f"{percentage_diff:+.1f}%")
+        col3.metric("High Estimate", f"${estimated_high:,.0f}")
+        recommended = estimated_value.get('recommended_listing_price', estimated_mid)
+        col4.metric("Recommended Listing", f"${recommended:,.0f}")
+        
+        st.markdown("---")
+        
+        # Market Analysis
+        st.markdown("## 📈 Market Analysis")
+        market_analysis = valuation_report.get('market_analysis', {})
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Market Trend", market_analysis.get('trend', 'Unknown').title())
+        col2.metric("Inventory Status", market_analysis.get('inventory_status', 'Unknown').title())
+        col3.metric("Price Trend (6mo)", market_analysis.get('price_trend_6mo', '+0%'))
+        
+        st.markdown("---")
+        
+        # Data Quality & Stats
+        st.markdown("## 📊 Valuation Data Quality")
+        preprocessed_data = result.get('preprocessed_data', {})
+        data_quality = preprocessed_data.get('data_quality', {})
+        scraped_data = result.get('scraped_data', {})
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Quality Score", f"{data_quality.get('quality_score', 0)*100:.0f}%")
+        col2.metric("Sold Properties Used", data_quality.get('total_sold_kept', 0))
+        col3.metric("For-Sale Properties", data_quality.get('total_for_sale_kept', 0))
+        col4.metric("Total Comparables", len(scraped_data.get('sold_homes', [])))
+        
+        st.markdown("---")
+        
+        # Confidence Section
+        st.markdown("## 📊 Valuation Confidence")
+        confidence = valuation_report.get('confidence', {})
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Overall Confidence", confidence.get('overall_confidence', 'Unknown').title())
+            st.metric("Confidence Score", f"{confidence.get('score', 0):.2f}")
             
-            # Verdict Card
-            col1, col2 = st.columns([2, 1])
+            if confidence.get('factors'):
+                st.markdown("**Positive Factors:**")
+                for factor in confidence['factors'][:3]:
+                    st.write(f"✅ {factor}")
+        
+        with col2:
+            if confidence.get('concerns'):
+                st.markdown("**Concerns:**")
+                for concern in confidence['concerns'][:3]:
+                    st.write(f"⚠️ {concern}")
+        
+        st.markdown("---")
+        
+        # Comparable Analysis
+        st.markdown("## 🏘️ Top Comparable Properties")
+        comparable_sales = scraped_data.get('sold_homes', [])
+        
+        if comparable_sales:
+            st.markdown(f"**Found {len(comparable_sales)} comparable sales**")
             
-            with col1:
-                st.markdown(f"""
-                    <div style="background-color: #{verdict_bg}; padding: 2rem; border-radius: 0.5rem; border-left: 8px solid {verdict_color};">
-                        <h2 style="color: {verdict_color}; margin: 0;">🎯 {verdict}</h2>
-                        <p style="font-size: 1.5rem; color: {verdict_color}; margin: 0.5rem 0;">
-                            Asking: <strong>${asking:,.0f}</strong> | Estimated: <strong>${estimated_mid:,.0f}</strong>
-                        </p>
-                        <p style="font-size: 1.2rem; color: {verdict_color}; margin: 0;">
-                            Difference: <strong>${difference:+,.0f} ({percentage_diff:+.1f}%)</strong>
-                        </p>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"""
-                    <div style="display: flex; align-items: center; justify-content: center; font-size: 3rem;">
-                        {verdict_icon}
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            st.markdown("---")
-            
-            # Price Estimate Section
-            st.markdown("## 💰 Estimated Price Range")
-            price_range = valuation_report.get('estimated_price_range', {})
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Low Estimate", f"${price_range.get('low', 0):,.0f}")
-            col2.metric("Mid Estimate", f"${price_range.get('mid', 0):,.0f}", delta=f"{percentage_diff:+.1f}%")
-            col3.metric("High Estimate", f"${price_range.get('high', 0):,.0f}")
-            col4.metric("Recommended Listing", f"${price_range.get('recommended_listing', 0):,.0f}")
-            
-            st.markdown("---")
-            
-            # Comparable Sales Section
-            st.markdown("## 🏘️ Comparable Sales Analysis")
-            comparable_sales = scraped_data.get('sold_homes', [])
-            
-            if comparable_sales:
-                st.info(f"✅ Found {len(comparable_sales)} comparable sales")
-                for i, comp in enumerate(comparable_sales, 1):
+            # Show top 5 comparables
+            for i, comp in enumerate(comparable_sales[:5], 1):
+                with st.expander(f"#{i}: {comp.get('address', 'Unknown Address')}"):
                     col1, col2, col3, col4, col5 = st.columns(5)
-                    col1.metric(f"Comp {i}", f"${comp.get('price', 0):,.0f}")
-                    col2.metric("Price/sqft", f"${comp.get('price', 0) / max(comp.get('sqft', 1), 1):.2f}")
-                    col3.metric("Sqft", f"{comp.get('sqft', 0):,}")
-                    col4.metric("Bedrooms", comp.get('bedrooms', 'N/A'))
-                    col5.metric("Sale Date", comp.get('date_sold', 'N/A'))
-            else:
-                st.warning("⚠️ No comparable sales found with sufficient data")
-            
-            st.markdown("---")
-            
-            # Market Insights Section
-            st.markdown("## 📈 Market Insights")
-            market_stats = preprocessed_data.get('market_statistics', {})
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric(
-                "Avg Price/sqft",
-                f"${market_stats.get('avg_price_per_sqft', 0):.2f}"
-            )
-            col2.metric(
-                "Total Sold Homes",
-                market_stats.get('total_sold', 0)
-            )
-            col3.metric(
-                "Data Confidence",
-                preprocessed_data.get('data_quality', {}).get('quality_score', 0.0)
-            )
-            col4.metric(
-                "Comps Used",
-                len(comparable_sales)
-            )
-            
-            st.markdown("---")
-            
-            # Search Results & Links Section
-            st.markdown("## 🔗 Search Results & Links")
-            
-            # Show query analysis and zip discovery results
-            if query_analysis:
-                st.subheader("🎯 Query Analysis")
-                st.write(f"**Intent:** {query_analysis.get('intent', 'N/A')}")
-                st.write(f"**Location:** {query_analysis.get('location', {}).get('value', 'N/A')}")
-                
-            if zip_discovery:
-                st.subheader("� ZIP Codes Discovered")
-                st.write(f"**Primary ZIP:** {zip_discovery.get('primary_zip', 'N/A')}")
-                nearby_zips = zip_discovery.get('nearby_zips', [])
-                if nearby_zips:
-                    st.write(f"**Nearby ZIPs:** {', '.join(map(str, nearby_zips[:10]))}")  # Show first 10
-            
-            # Reasoning Section
-            st.markdown("## 📝 Valuation Reasoning")
-            reasoning = valuation_report.get('reasoning', {})
-            comp_estimate = reasoning.get('comp_based_estimate', {})
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**Comp-Based Estimate:**")
-                st.write(f"- Method: {comp_estimate.get('method', 'N/A')}")
-                st.write(f"- Avg Price/sqft: ${comp_estimate.get('avg_price_per_sqft', 0):.2f}")
-                st.write(f"- Calculation: {comp_estimate.get('calculation', 'N/A')}")
-                st.write(f"- Comps Used: {len(comp_estimate.get('comps_used', []))}")
-            
-            with col2:
-                st.markdown("**Final Reasoning:**")
-                st.write(reasoning.get('final_reasoning', 'N/A'))
-            
-            st.markdown("---")
-            
-            # Recommendations Section
-            st.markdown("## 💡 Recommendations")
-            recommendations = valuation_report.get('recommendations', {})
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown("**Listing Strategy:**")
-                st.write(recommendations.get('listing_strategy', 'N/A'))
-            
-            with col2:
-                st.markdown("**Expected Days on Market:**")
-                st.write(f"{recommendations.get('expected_days_on_market', 0)} days")
-            
-            with col3:
-                st.markdown("**Overall Confidence:**")
-                confidence = preprocessed_data.get('data_quality', {}).get('confidence', 'low').upper()
-                st.write(confidence)
-            
-            st.markdown("---")
-            
-            # Download Report Button
-            st.markdown("## 📥 Export Report")
+                    
+                    price = comp.get('price') or 0
+                    sqft = comp.get('living_area_sqft') or 1
+                    price_per_sqft = price / max(sqft, 1) if price and sqft else 0
+                    
+                    col1.metric("Sale Price", f"${price:,.0f}")
+                    col2.metric("Price/sqft", f"${price_per_sqft:.2f}")
+                    col3.metric("Sqft", f"{sqft:,}")
+                    col4.metric("Beds/Baths", f"{comp.get('bedrooms', 0)}/{comp.get('bathrooms', 0)}")
+                    col5.metric("Sale Date", comp.get('date_sold', 'Recent'))
+        else:
+            st.warning("⚠️ No comparable sales data available")
+        
+        st.markdown("---")
+        
+        # Recommendations
+        st.markdown("## 💡 Recommendations")
+        recommendations = valuation_report.get('recommendations', {})
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if recommendations.get('for_sellers'):
+                st.markdown("**For Sellers:**")
+                for rec in recommendations['for_sellers'][:2]:
+                    st.write(f"• {rec}")
+        
+        with col2:
+            if recommendations.get('for_buyers'):
+                st.markdown("**For Buyers:**")
+                for rec in recommendations['for_buyers'][:2]:
+                    st.write(f"• {rec}")
+        
+        st.markdown("---")
+        
+        # Export Options
+        st.markdown("## 📥 Export Report")
+        
+        col1, col2 = st.columns(2)
+        with col1:
             report_json = json.dumps(valuation_report, indent=2)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    label="📋 Download JSON Report",
-                    data=report_json,
-                    file_name=f"valuation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json",
-                    use_container_width=True
-                )
-            
-            with col2:
-                # Create CSV export
-                import pandas as pd
+            st.download_button(
+                label="📋 Download JSON Report",
+                data=report_json,
+                file_name=f"valuation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+        
+        with col2:
+            # CSV export for comparables
+            if comparable_sales:
                 comp_data = []
-                for comp in comparable_sales:
+                for comp in comparable_sales[:20]:
+                    price = comp.get('price', 0)
+                    sqft = comp.get('living_area_sqft', 1)
                     comp_data.append({
                         "Address": comp.get('address', 'N/A'),
-                        "Price": comp.get('price', 0),
-                        "Price/sqft": comp.get('price', 0) / max(comp.get('sqft', 1), 1),
-                        "Sqft": comp.get('sqft', 0),
+                        "Price": f"${price:,.0f}",
+                        "Price/sqft": f"${price/max(sqft, 1):.2f}",
+                        "Sqft": f"{sqft:,}",
                         "Bedrooms": comp.get('bedrooms', 'N/A'),
-                        "Date Sold": comp.get('date_sold', 'N/A'),
-                        "ZIP": comp.get('zipcode', 'N/A')
+                        "Bathrooms": comp.get('bathrooms', 'N/A'),
+                        "Sale Date": comp.get('date_sold', 'N/A')
                     })
                 
-                if comp_data:
-                    df = pd.DataFrame(comp_data)
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📊 Download Comparables CSV",
-                        data=csv,
-                        file_name=f"comparables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-
+                import pandas as pd
+                df = pd.DataFrame(comp_data)
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📊 Download Comparables CSV",
+                    data=csv,
+                    file_name=f"comparables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+        
+        st.markdown("---")
+        st.success("✅ Valuation Report Complete! You can download your reports above.")
+    
     except Exception as e:
         st.error(f"❌ Error during valuation: {str(e)}")
         st.write("Please check your input and try again.")

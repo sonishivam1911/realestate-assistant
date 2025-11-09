@@ -34,12 +34,17 @@ class ValuationJudgmentAgent:
             JSON with valuation and market analysis
         """
         
+        
+        
         print(f"\n{'='*80}")
         print(f"💰 AGENT 5: Valuation Judgment Agent")
         print(f"{'='*80}\n")
         
         # Prepare context for LLM
         context = self._prepare_context(preprocessed_data, target_property)
+        
+        print(f"Target Property: {target_property}\n")
+        print(f"Market Data Context: {context}\n")
         
         # Create messages
         messages = self.prompt_template.invoke({
@@ -72,6 +77,23 @@ class ValuationJudgmentAgent:
         # Take top 20 comparables (already ranked if target property was provided)
         top_comps = preprocessed_data['filtered_sold_homes'][:20]
         
+        # Log what we're sending to the LLM
+        print(f"📋 Prepared Context for LLM:")
+        print(f"   • Using {len(top_comps)} top comparables")
+        if top_comps:
+            # Show state distribution
+            states = {}
+            for comp in top_comps:
+                address = comp.get('address', '')
+                if ', ' in address:
+                    parts = address.split(', ')
+                    if len(parts) >= 2:
+                        state_part = parts[-1].split()[0] if parts[-1] else 'Unknown'
+                        states[state_part] = states.get(state_part, 0) + 1
+            
+            print(f"   • State distribution: {dict(states)}")
+            print(f"   • Price range: ${min(c.get('price', 0) for c in top_comps):,} - ${max(c.get('price', 0) for c in top_comps):,}")
+        
         # Summarize comparables
         comp_summary = []
         for comp in top_comps:
@@ -92,6 +114,7 @@ class ValuationJudgmentAgent:
             "market_statistics": preprocessed_data['market_statistics'],
             "data_quality": preprocessed_data['data_quality']
         }
+    
         
         return context
     
@@ -104,6 +127,7 @@ class ValuationJudgmentAgent:
             if json_match:
                 json_str = json_match.group()
                 valuation = json.loads(json_str)
+                print(f"Parsed Valuation JSON: {valuation}\n")
                 return valuation
         except json.JSONDecodeError as e:
             print(f"❌ JSON parsing error: {e}")

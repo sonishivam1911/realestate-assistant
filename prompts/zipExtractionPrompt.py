@@ -9,25 +9,28 @@ SEARCH RESULTS:
 {search_results_text}
 
 YOUR TASK:
-Extract ALL 5-digit ZIP codes that are NEAR or NEIGHBORING the primary ZIP code {primary_zip}.
+Extract ALL 5-digit ZIP codes that are NEAR or NEIGHBORING the primary ZIP code {primary_zip} and are in the SAME STATE.
 
 EXTRACTION RULES:
 
 1. LOOK FOR:
    - ZIP codes explicitly mentioned as "near {primary_zip}"
-   - ZIP codes in the same city/county
-   - ZIP codes mentioned in lists of neighboring areas
-   - ZIP codes on maps or geographic descriptions
-   - ZIP codes in USPS databases or tools
+   - ZIP codes in the same city/county/state
+   - ZIP codes mentioned in lists of neighboring areas within 5-6 miles
+   - ZIP codes on maps or geographic descriptions (same state only)
+   - ZIP codes in USPS databases or tools for the same state
 
 2. VALID ZIP CODES:
    - Must be exactly 5 digits
    - Must be in range 00501-99950
    - Must be geographically related to {primary_zip}
+   - Must be in the SAME STATE as {primary_zip}
+   - Preferably within 5-6 mile radius
 
 3. EXCLUDE:
    - The primary ZIP ({primary_zip}) itself
-   - ZIP codes from obviously different states/regions
+   - ZIP codes from different states/regions
+   - ZIP codes more than 10 miles away
    - Phone numbers or other 5-digit numbers
    - ZIP codes mentioned as examples unrelated to the search area
 
