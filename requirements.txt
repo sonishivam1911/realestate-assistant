@@ -13,6 +13,6 @@ pandas
 langsmith
 json-repair
 geopy
-undetected-chromedriver>=0.4.4
+undetected-chromedriver>=0.4.9
 selenium>=4.0.0
 pgeocode

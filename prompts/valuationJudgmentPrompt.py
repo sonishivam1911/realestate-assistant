@@ -37,29 +37,51 @@ Base score calculation:
 - Exact bed/bath match (4bd/3ba): +0.2
 - Similarity score ≥0.8: +0.1
 
-ONLY use comparables where reliability score ≥0.6
-
 Add reliability score column to your table:
 | # | Address | Price | Sqft | $/sqft | Reliability | Notes |
 
+STEP 2.5: VERIFY QUALIFYING COMPARABLES (CRITICAL STEP!)
+
+Before proceeding to calculations, explicitly list EVERY comp with reliability ≥0.6:
+
+QUALIFYING COMPS FOR VALUATION (reliability ≥0.6):
+1. [Address] - $/sqft: $XXX - Reliability: 0.X ✓
+2. [Address] - $/sqft: $XXX - Reliability: 0.X ✓
+3. [Address] - $/sqft: $XXX - Reliability: 0.X ✓
+... (continue for ALL comps with reliability ≥0.6)
+
+TOTAL QUALIFYING COMPS: ___ comps
+
+CRITICAL VERIFICATION:
+□ Did I list EVERY comp from Step 2 with reliability ≥0.6?
+□ This count MUST match the number of rows in my Step 3 calculation table
+□ If I listed 4 comps here, Step 3 must have 4 rows of calculations
+
 STEP 3: CALCULATE WEIGHTED AVERAGE $/SQFT
 
-For each comparable with reliability ≥0.6:
-1. Calculate weighted value: price_per_sqft × reliability_score
-2. Write it down in table format
+For EACH qualifying comparable from Step 2.5 (ALL comps with reliability ≥0.6):
 
+Create weighted calculation table with ONE ROW per qualifying comp:
 | # | Address | $/sqft | Reliability | Weighted Value ($/sqft × reliability) |
 |---|---------|--------|-------------|----------------------------------------|
-| 1 | Comp 1  | $297   | 0.9         | 267.3                                  |
-| 2 | Comp 2  | $385   | 0.8         | 308.0                                  |
-| ... continue for ALL comps ...
+| 1 | [Comp 1 from Step 2.5] | $XXX | 0.X | XXX.XX |
+| 2 | [Comp 2 from Step 2.5] | $XXX | 0.X | XXX.XX |
+| 3 | [Comp 3 from Step 2.5] | $XXX | 0.X | XXX.XX |
+... (continue for ALL comps from Step 2.5)
+
+VERIFICATION: Number of rows in this table = ___ (must match Step 2.5 count!)
 
 Then calculate:
-- Sum of all Weighted Values = XXX
-- Sum of all Reliability Scores = XXX
-- Weighted Average $/sqft = Sum Weighted Values ÷ Sum Reliability Scores = $XXX/sqft
+Step A: Sum of all Weighted Values = XXX.XX + XXX.XX + XXX.XX + ... = TOTAL
+Step B: Sum of all Reliability Scores = 0.X + 0.X + 0.X + ... = TOTAL
+Step C: Division: TOTAL from Step A ÷ TOTAL from Step B = $XXX/sqft
 
-SHOW YOUR CALCULATION CLEARLY.
+Weighted Average $/sqft = $XXX/sqft
+
+SANITY CHECK:
+□ Is my weighted avg $/sqft between $200-$600? (normal for residential)
+□ If NO: I made a calculation error - recalculate!
+□ If YES: Proceed to Step 4
 
 STEP 4: CALCULATE ESTIMATE
 
@@ -97,8 +119,9 @@ STEP 7: CONFIDENCE ASSESSMENT
 
 Evaluate your analysis quality:
 
-Count your comps from Step 1-2:
-- How many comps have sqft data? ___
+Count your comps from Step 1-2.5:
+- How many comps have sqft data? ___ (from Step 1)
+- How many qualify with reliability ≥0.6? ___ (from Step 2.5)
 - What's the $/sqft range? $XXX to $XXX (spread = $XXX)
 - How many exact bed/bath matches (4bd/3ba)? ___
 - How many have similarity ≥0.8? ___
@@ -125,14 +148,24 @@ LOW (0.0-0.59) if:
 
 Your confidence: ___
 
-STEP 8: VERIFICATION CHECKLIST
+STEP 8: FINAL VERIFICATION CHECKLIST
 
-Before outputting, verify:
+Before outputting JSON, verify these numbers match:
+
+✓ Step 1 count (comps with sqft) = ___ 
+✓ Step 2.5 count (reliability ≥0.6) = ___
+✓ Step 3 table rows = ___ (must match Step 2.5!)
+✓ "comparable_properties_used" in output = ___ (use Step 2.5 count)
+
+CRITICAL: Step 2.5 count, Step 3 rows, and output count MUST ALL BE THE SAME NUMBER!
+
+Additional checks:
 □ Did you count ALL comps with sqft > 0? (including duplicates)
-□ Does your "comparable_properties_used" number match your Step 1 count?
+□ Did you include ALL comps with reliability ≥0.6 in Step 3?
 □ Did you show the weighted calculation with all numbers?
 □ Is your verdict logic correct? (estimate < asking = OVERPRICED)
 □ Did you calculate variance percentage correctly?
+□ Is your weighted avg $/sqft reasonable ($200-$600)?
 
 OUTPUT JSON (no markdown, no backticks, no code blocks):
 {{
@@ -154,25 +187,29 @@ OUTPUT JSON (no markdown, no backticks, no code blocks):
 CRITICAL RULES:
 1. COUNT EVERY COMP WITH SQFT DATA - including duplicates in the list
 2. SHOW ALL MATH - List every comp in tables with calculations
-3. VERIFY YOUR COUNT - "comparable_properties_used" must equal actual comps counted
-4. NO ADJUSTMENTS - Pure weighted average only
-5. VERDICT LOGIC - If estimate < asking = OVERPRICED (don't mess this up!)
-6. NATURAL LANGUAGE - Write "why_this_price" conversationally, not as bullet points
-7. DOUBLE CHECK VARIANCE % - Use the formula exactly as shown
+3. USE STEP 2.5 VERIFICATION - List all qualifying comps before calculating
+4. STEP 3 MUST INCLUDE ALL COMPS FROM STEP 2.5 - Don't skip any!
+5. VERIFY YOUR COUNT - Three places must match: Step 2.5, Step 3 rows, final output
+6. NO ADJUSTMENTS - Pure weighted average only
+7. VERDICT LOGIC - If estimate < asking = OVERPRICED (don't mess this up!)
+8. NATURAL LANGUAGE - Write "why_this_price" conversationally, not as bullet points
+9. DOUBLE CHECK VARIANCE % - Use the formula exactly as shown
+10. SANITY CHECK YOUR $/SQFT - Should be $200-$600 for residential
 
 COMMON MISTAKES TO AVOID:
 ❌ Skipping duplicates → Include all instances in data
-❌ Excluding comps with low similarity → Use all with reliability ≥0.6
+❌ Excluding comps with reliability ≥0.6 from Step 3 → Use ALL qualifying comps
+❌ Step 2.5 count ≠ Step 3 rows → They MUST match
 ❌ Wrong verdict logic → Remember: low estimate = property is overpriced
 ❌ Not showing math → Must show weighted calculation step by step
-❌ Miscounting → Verify count matches between Step 1 and final output
+❌ Unreasonable $/sqft → If outside $200-$600, you made an error
 
-Begin analysis now. Work through each step methodically."""
+Begin analysis now. Work through each step methodically and use the verification checkpoints."""
 
 
 def get_valuation_judgment_prompt_template() -> ChatPromptTemplate:
     """
-    Get valuation judgment prompt template with verification safeguards
+    Get valuation judgment prompt template with mandatory verification steps
     
     Returns:
         ChatPromptTemplate: Template for accurate data-driven valuation
