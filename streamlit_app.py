@@ -223,10 +223,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Title
-st.title("🏠 Real Estate Property Valuation Assistant")
-st.markdown("---")
-
 # Sidebar for input
 with st.sidebar:
     st.header("📋 Property Details")
@@ -256,6 +252,9 @@ with st.sidebar:
     
     st.markdown("---")
     run_valuation = st.button("🚀 Run Valuation", use_container_width=True, type="primary")
+
+# Main page title
+st.markdown("# Do Your Own CMA")
 
 # Main content area
 if run_valuation:
@@ -512,55 +511,21 @@ if run_valuation:
         
         st.markdown("---")
         
-        # Export Options
-        st.markdown("## Export Report")
+        # Do CMA Yourself - Agentic Manner
+        st.markdown("## Do Your Own CMA")
         
         col1, col2 = st.columns(2)
         with col1:
-            # Export the full valuation report as JSON
-            report_json = json.dumps(valuation_report, indent=2)
-            st.download_button(
-                label="Download Valuation Report (JSON)",
-                data=report_json,
-                file_name=f"valuation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json",
-                use_container_width=True
-            )
+            if st.button("🔄 Run Valuation Again", use_container_width=True, type="primary"):
+                st.rerun()
         
         with col2:
-            # Export comparables as CSV
-            if all_comparables:
-                comp_data = []
-                for comp in all_comparables:
-                    price = comp.get('price', 0)
-                    sqft = comp.get('living_area_sqft', 0)
-                    ppsf = comp.get('price_per_sqft', 0)
-                    similarity = comp.get('similarity_score', 0)
-                    
-                    comp_data.append({
-                        "Address": comp.get('address', 'N/A'),
-                        "Price": f"${price:,.0f}" if price else "N/A",
-                        "Price/sqft": f"${ppsf:.2f}" if ppsf > 0 else "N/A",
-                        "Sqft": f"{sqft:,.0f}" if sqft > 0 else "N/A",
-                        "Beds": int(comp.get('bedrooms', 0)) if comp.get('bedrooms') else 0,
-                        "Baths": comp.get('bathrooms', 0),
-                        "Similarity": f"{similarity:.2%}" if similarity else "N/A",
-                        "Status": comp.get('home_status', 'Unknown')
-                    })
-                
-                import pandas as pd
-                df = pd.DataFrame(comp_data)
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="Download Comparables (CSV)",
-                    data=csv,
-                    file_name=f"comparables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+            if st.button("📊 Analyze New Property", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
         
         st.markdown("---")
-        st.success("Valuation Complete! Download your reports above.")
+        st.success("✅ Valuation Complete! Use buttons above to run analysis again or analyze a new property.")
     
     except Exception as e:
         st.error(f"❌ Error during valuation: {str(e)}")
