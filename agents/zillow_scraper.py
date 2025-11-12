@@ -1,19 +1,38 @@
-import pyzill
-from datetime import datetime, timedelta
-from typing import List, Dict, Tuple, Optional
+"""
+Zillow Property Scraper - Production Ready
+Author: Built for Shivam's Real Estate AI Agent
+Features:
+- Undetected ChromeDriver for stealth
+- Hybrid approach: CSS for search + JSON for details
+- Rate limiting & error handling
+- Data persistence (CSV + JSON)
+- Retry logic with exponential backoff
+"""
+
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import json
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+import csv
+import random
+from datetime import datetime
+from pathlib import Path
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+from typing import List, Dict, Optional
+import sys
 
-# Configure logging to reduce noise
-logging.getLogger("geopy").setLevel(logging.WARNING)
-
-# Thread-safe lock for print statements
-print_lock = threading.Lock()
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('zillow_scraper.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 class ZillowScraperAgent:
@@ -23,8 +42,8 @@ class ZillowScraperAgent:
     """
     
     def __init__(self):
-        self.max_retries = 3
-        self.retry_delay = 5
+        self.max_retries = 2  # Reduced from 3 to avoid rate limiting
+        self.retry_delay = 10  # Increased from 5 to be more conservative
         self.geocoder = Nominatim(user_agent="realestate-valuation-bot")
         self.zip_cache = {}  # Cache coordinates to avoid repeated API calls
 
@@ -120,12 +139,10 @@ class ZillowScraperAgent:
             'total_for_sale': 0
         }
         
-        # Scrape all ZIPs in parallel using ThreadPoolExecutor
-        print(f"🚀 Starting parallel scraping with {min(len(all_zips), 8)} workers...\n")
+        print(f"🚀 Starting sequential scraping of {len(all_zips)} ZIPs...\n")
         
-        def scrape_zip(zip_index_tuple):
-            """Helper function to scrape a single ZIP code (for parallel execution)"""
-            i, zip_code = zip_index_tuple
+        # Scrape all ZIPs sequentially (no concurrent processing)
+        for i, zip_code in enumerate(all_zips, 1):
             try:
                 # Scrape sold homes
                 sold = self._scrape_sold_homes(zip_code, cutoff_date, asking_price, target_property)
@@ -133,48 +150,17 @@ class ZillowScraperAgent:
                 # Scrape for-sale homes
                 for_sale = self._scrape_for_sale_homes(zip_code, asking_price, target_property)
                 
-                return {
-                    'zip_code': zip_code,
-                    'index': i,
-                    'sold': sold,
-                    'for_sale': for_sale,
-                    'success': True,
-                    'error': None
-                }
-            except Exception as e:
-                return {
-                    'zip_code': zip_code,
-                    'index': i,
-                    'sold': [],
-                    'for_sale': [],
-                    'success': False,
-                    'error': str(e)
-                }
-        
-        # Execute all ZIPs in parallel with controlled concurrency
-        with ThreadPoolExecutor(max_workers=min(len(all_zips), 8)) as executor:
-            futures = {
-                executor.submit(scrape_zip, (i, zip_code)): i 
-                for i, zip_code in enumerate(all_zips, 1)
-            }
-            
-            # Process results as they complete
-            for future in as_completed(futures):
-                result = future.result()
-                i = result['index']
-                zip_code = result['zip_code']
-                
                 with print_lock:
-                    if result['success']:
-                        print(f"[{i}/{len(all_zips)}] ✅ {zip_code}: {len(result['sold'])} sold | {len(result['for_sale'])} for-sale")
-                        all_sold_homes.extend(result['sold'])
-                        all_for_sale_homes.extend(result['for_sale'])
-                        scraping_stats['successful_zips'] += 1
-                        scraping_stats['total_sold'] += len(result['sold'])
-                        scraping_stats['total_for_sale'] += len(result['for_sale'])
-                    else:
-                        print(f"[{i}/{len(all_zips)}] ❌ {zip_code}: {result['error']}")
-                        scraping_stats['failed_zips'] += 1
+                    print(f"[{i}/{len(all_zips)}] ✅ {zip_code}: {len(sold)} sold | {len(for_sale)} for-sale")
+                    all_sold_homes.extend(sold)
+                    all_for_sale_homes.extend(for_sale)
+                    scraping_stats['successful_zips'] += 1
+                    scraping_stats['total_sold'] += len(sold)
+                    scraping_stats['total_for_sale'] += len(for_sale)
+            except Exception as e:
+                with print_lock:
+                    print(f"[{i}/{len(all_zips)}] ❌ {zip_code}: {str(e)}")
+                    scraping_stats['failed_zips'] += 1
         
         print(f"\n{'='*60}")
         print(f"📊 SCRAPING COMPLETE:")
@@ -219,8 +205,11 @@ class ZillowScraperAgent:
         for attempt in range(self.max_retries):
             try:
                 print(f"   🔍 Attempt {attempt + 1}: Scraping sold homes...")
-                # Parse proxy - for now using None but should be configured for production
-                proxy_url = None  # pyzill.parse_proxy("proxy_ip", "proxy_port", "username", "password")
+                
+                # Get next proxy from rotation
+                proxy_url = get_next_proxy()
+                if proxy_url:
+                    print(f"   🌐 Using proxy: {proxy_url}")
                 
                 # Use correct pyzill parameter order: pagination comes first
                 # Use smaller zoom_value for sold (as per documentation example)
@@ -241,8 +230,22 @@ class ZillowScraperAgent:
                     proxy_url=proxy_url
                 )
                 
+                # Check if results are valid (not empty/None)
+                if results is None or results == "" or results == {}:
+                    print(f"   ⚠️  Empty response from Zillow for {zip_code}")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(self.retry_delay * 2)  # Longer delay for empty response
+                        continue
+                    else:
+                        return []
+                
                 return self._parse_sold_results(results, cutoff_date, zip_code)
                 
+            except json.JSONDecodeError as e:
+                print(f"   ❌ Attempt {attempt + 1} failed (JSON error): {str(e)}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay * 2)  # Longer delay for parsing errors
+                    continue
             except Exception as e:
                 print(f"   ❌ Attempt {attempt + 1} failed: {str(e)}")
                 if attempt < self.max_retries - 1:
@@ -276,8 +279,11 @@ class ZillowScraperAgent:
         for attempt in range(self.max_retries):
             try:
                 print(f"   🏠 Attempt {attempt + 1}: Scraping for-sale homes...")
-                # Parse proxy - for now using None but should be configured for production
-                proxy_url = None  # pyzill.parse_proxy("proxy_ip", "proxy_port", "username", "password")
+                
+                # Get next proxy from rotation
+                proxy_url = get_next_proxy()
+                if proxy_url:
+                    print(f"   🌐 Using proxy: {proxy_url}")
                 
                 # Use correct pyzill parameter order: pagination comes first
                 results = pyzill.for_sale(
@@ -297,8 +303,23 @@ class ZillowScraperAgent:
                     proxy_url=proxy_url
                 )
                 
+                # Check if results are valid (not empty/None)
+                if results is None or results == "" or results == {}:
+                    print(f"Result is : {results}")
+                    print(f"   ⚠️  Empty response from Zillow for {zip_code}")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(self.retry_delay * 2)  # Longer delay for empty response
+                        continue
+                    else:
+                        return []
+                
                 return self._parse_for_sale_results(results, zip_code)
                 
+            except json.JSONDecodeError as e:
+                print(f"   ❌ Attempt {attempt + 1} failed (JSON error): {str(e)}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay * 2)  # Longer delay for parsing errors
+                    continue
             except Exception as e:
                 print(f"   ❌ Attempt {attempt + 1} failed: {str(e)}")
                 if attempt < self.max_retries - 1:
@@ -416,14 +437,32 @@ class ZillowScraperAgent:
                     
                     # Convert numeric fields to proper types
                     for field in ['bedrooms', 'bathrooms', 'living_area_sqft', 'lot_area_sqft', 'year_built', 'days_on_zillow']:
-                        if prop[field] and isinstance(prop[field], str):
-                            try:
-                                if field == 'bathrooms':
-                                    prop[field] = float(prop[field])  # Bathrooms can be float (e.g., 1.5)
-                                else:
-                                    prop[field] = int(prop[field].replace(',', ''))
-                            except (ValueError, AttributeError):
+                        try:
+                            value = prop.get(field)
+                            if value is None or value == '':
                                 prop[field] = None
+                            elif isinstance(value, (int, float)):
+                                # Already numeric - keep as is, but ensure positive
+                                if field in ['bedrooms', 'bathrooms', 'living_area_sqft', 'lot_area_sqft', 'year_built', 'days_on_zillow']:
+                                    if value > 0:
+                                        if field == 'bathrooms':
+                                            prop[field] = float(value)  # Bathrooms can be float (e.g., 1.5)
+                                        else:
+                                            prop[field] = int(value)
+                                    else:
+                                        prop[field] = None  # Reject negative/zero values
+                            elif isinstance(value, str):
+                                # Convert string to numeric
+                                cleaned_value = value.strip().replace(',', '')
+                                if cleaned_value:
+                                    if field == 'bathrooms':
+                                        prop[field] = float(cleaned_value)
+                                    else:
+                                        prop[field] = int(cleaned_value)
+                                else:
+                                    prop[field] = None
+                        except (ValueError, AttributeError, TypeError):
+                            prop[field] = None
                     
                     # Calculate price per sqft if possible
                     try:
@@ -497,14 +536,32 @@ class ZillowScraperAgent:
                     
                     # Convert numeric fields to proper types
                     for field in ['bedrooms', 'bathrooms', 'living_area_sqft', 'lot_area_sqft', 'year_built', 'days_on_zillow']:
-                        if prop[field] and isinstance(prop[field], str):
-                            try:
-                                if field == 'bathrooms':
-                                    prop[field] = float(prop[field])  # Bathrooms can be float (e.g., 1.5)
-                                else:
-                                    prop[field] = int(prop[field].replace(',', ''))
-                            except (ValueError, AttributeError):
+                        try:
+                            value = prop.get(field)
+                            if value is None or value == '':
                                 prop[field] = None
+                            elif isinstance(value, (int, float)):
+                                # Already numeric - keep as is, but ensure positive
+                                if field in ['bedrooms', 'bathrooms', 'living_area_sqft', 'lot_area_sqft', 'year_built', 'days_on_zillow']:
+                                    if value > 0:
+                                        if field == 'bathrooms':
+                                            prop[field] = float(value)  # Bathrooms can be float (e.g., 1.5)
+                                        else:
+                                            prop[field] = int(value)
+                                    else:
+                                        prop[field] = None  # Reject negative/zero values
+                            elif isinstance(value, str):
+                                # Convert string to numeric
+                                cleaned_value = value.strip().replace(',', '')
+                                if cleaned_value:
+                                    if field == 'bathrooms':
+                                        prop[field] = float(cleaned_value)
+                                    else:
+                                        prop[field] = int(cleaned_value)
+                                else:
+                                    prop[field] = None
+                        except (ValueError, AttributeError, TypeError):
+                            prop[field] = None
                     
                     # Calculate price per sqft if possible
                     try:

@@ -3,6 +3,7 @@ from typing import Dict, List
 import json
 import re
 from prompts.queryAnalysisPrompt import get_query_analysis_prompt_template
+from output_parser import ActionParser
 
 
 class QueryAnalysisAgent:
@@ -18,6 +19,7 @@ class QueryAnalysisAgent:
             max_tokens=2000
         )
         self.prompt_template = get_query_analysis_prompt_template()
+        self.parser = ActionParser(use_json_repair=True)  # ✅ Use robust JSON parser
     
     def analyze_query(self, user_query: str) -> Dict:
         """
@@ -53,22 +55,44 @@ class QueryAnalysisAgent:
         return analysis
     
     def _parse_analysis_response(self, response_text: str) -> Dict:
-        """Parse LLM JSON response"""
+        """
+        Parse LLM JSON response using robust ActionParser
+        
+        ✅ Uses json-repair library to fix malformed JSON
+        ✅ Handles missing quotes, trailing commas, unescaped quotes
+        ✅ Falls back gracefully if JSON cannot be repaired
+        """
         
         try:
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group()
-                result = json.loads(json_str)
-                return result
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON parsing error: {e}")
-        except Exception as e:
-            print(f"❌ Analysis error: {e}")
+            print("\n🔍 Parsing LLM response with ActionParser...")
+            
+            # Use the robust parser's safe_json_parse method
+            parsed_json = self.parser.safe_json_parse(response_text)
+            
+            if parsed_json and isinstance(parsed_json, dict):
+                print(f"✅ Successfully parsed query analysis JSON\n")
+                return parsed_json
+            else:
+                print(f"⚠️  Parser returned None or non-dict, using fallback")
+                return self._fallback_analysis()
         
-        # Fallback
-        return self._fallback_analysis()
+        except Exception as e:
+            print(f"❌ Parsing error with ActionParser: {e}")
+            print(f"   Falling back to basic JSON extraction...")
+            
+            # Fallback: try basic regex extraction
+            try:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group()
+                    result = json.loads(json_str)
+                    print(f"✅ Basic extraction succeeded\n")
+                    return result
+            except Exception as e2:
+                print(f"❌ Basic extraction also failed: {e2}")
+            
+            # Final fallback
+            return self._fallback_analysis()
     
     def _fallback_analysis(self) -> Dict:
         """Fallback if analysis fails"""

@@ -11,6 +11,8 @@ python-dotenv
 streamlit
 pandas
 langsmith
-pyzill
 json-repair
 geopy
+undetected-chromedriver>=0.4.4
+selenium>=4.0.0
+pgeocode

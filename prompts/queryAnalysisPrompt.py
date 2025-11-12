@@ -5,167 +5,136 @@ QUERY_ANALYSIS_PROMPT = """You are a real estate search strategist. Analyze the 
 
 USER QUERY: "{user_query}"
 
-YOUR TASKS:
+ANALYSIS TASKS:
 
 1. EXTRACT LOCATION INFORMATION:
    - Primary location (ZIP code, address, or city)
-   - Extract ZIP code if explicitly mentioned
-   - Extract city and state if present
+   - City and state if present
    - Determine location type (zip/address/city)
 
 2. UNDERSTAND USER INTENT:
-   - Property valuation? (wants to know what a property is worth)
-   - Market analysis? (wants to know market trends in an area)
-   - Comparison? (comparing multiple properties/areas)
+   - property_valuation: User wants to know what a property is worth
+   - market_analysis: User wants market trends in an area
+   - comparison: Comparing multiple properties/areas
 
-3. GENERATE DUCKDUCKGO SEARCH QUERIES:
-   Create 8-10 highly specific search queries to find nearby ZIP codes within the SAME STATE. These queries should:
+3. IDENTIFY ECONOMIC TIER OF PRIMARY LOCATION:
+   Before searching for nearby ZIPs, identify the ECONOMIC STATUS/TIER of the primary location:
    
-   **Query Types to Generate:**
+   TIER 1 - HIGH AFFLUENCE:
+   - Keywords: "affluent", "wealthy", "upscale", "luxury", "premium", "exclusive", "executive", "estate", "high-end"
+   - Characteristics: Median home values $1M+, gated communities, country clubs, prestigious addresses
+   - Examples: Princeton NJ (08540), Atherton CA, Highland Park TX, Bel Air CA, Winnetka IL
    
-   A. DIRECT ZIP CODE SEARCHES (3-4 queries):
-      - "ZIP codes near [primary_zip] [state]"
-      - "neighboring ZIP codes [city] [state] within 6 miles"
-      - "[primary_zip] adjacent ZIP codes same state"
-      - "ZIP codes within 5-6 miles of [primary_zip] [state]"
+   TIER 2 - MIDDLE/MODERATE:
+   - Keywords: "suburban", "middle-class", "established", "family-friendly", "convenient"
+   - Characteristics: Median home values $300K-$800K, mixed residential, accessible neighborhoods
+   - Examples: Suburban areas around major cities
    
-   B. GEOGRAPHIC/COUNTY SEARCHES (2-3 queries):
-      - "[city] [state] surrounding ZIP codes"
-      - "[county] county [state] ZIP codes list"
-      - "ZIP code map [city] [state] radius 6 miles"
+   TIER 3 - LOWER INCOME:
+   - Keywords: "affordable", "budget", "working-class", "lower-income", "public housing", "industrial"
+   - Characteristics: Median home values under $300K, rental-heavy, economically disadvantaged
+   - Examples: Trenton NJ, Camden NJ, struggling urban centers
    
-   C. DATABASE/TOOL SEARCHES (2-3 queries):
-      - "USPS ZIP code lookup [city] [state] nearby"
-      - "ZIP code radius search [primary_zip] [state] 6 miles"
-      - "ZIP code finder [city] [state] surrounding areas"
+   CRITICAL RULE: ONLY search for ZIP codes with the SAME ECONOMIC TIER as primary location.
+   Example: For primary "08540 Princeton NJ" (TIER 1 - wealthy), search ONLY for other TIER 1 affluent neighborhoods.
+   Trenton NJ (TIER 3 - working-class) cannot be used, regardless of geographic proximity - DIFFERENT ECONOMIC TIER.
 
-4. DETERMINE SEARCH RADIUS:
-   - Default: 5-6 miles (to get comprehensive data within reasonable distance)
-   - Focus on SAME STATE only
-   - Adjust based on location type (urban: 5 miles, suburban/rural: 6 miles)
+4. GENERATE SEARCH QUERIES (8-10 queries):
+   Create DuckDuckGo queries to find ZIP codes within 4-5 MILES of the primary ZIP code.
+   REQUIREMENTS: Same state + Same economic conditions as primary ZIP
+   
+   STEP 1: Determine economic tier of PRIMARY ZIP CODE provided by user
+   STEP 2: Search for OTHER ZIP codes that are:
+           - Within 4-5 miles radius of primary ZIP
+           - In the SAME STATE
+           - With MATCHING economic tier/conditions
+   STEP 3: Return only ZIPs meeting ALL three criteria
+   
+   Query Examples for Different Economic Tiers:
+   
+   IF PRIMARY ZIP IS AFFLUENT (e.g., 08540 Princeton NJ - wealthy):
+   - "ZIP codes within 5 miles of [primary_zip] [state] affluent"
+   - "[state] affluent neighborhoods near [primary_zip]"
+   - "ZIP codes surrounding [primary_zip] wealthy areas [state]"
+   - "[primary_city] [state] wealthy ZIP codes nearby"
+   - "[county] [state] high-value areas within 5 miles [primary_zip]"
+   
+   IF PRIMARY ZIP IS MODERATE/MIDDLE-CLASS:
+   - "ZIP codes within 5 miles of [primary_zip] [state] middle-class"
+   - "[state] suburban neighborhoods near [primary_zip]"
+   - "ZIP codes surrounding [primary_zip] [state]"
+   
+   IF PRIMARY ZIP IS LOWER-INCOME/AFFORDABLE:
+   - "ZIP codes within 5 miles of [primary_zip] [state] affordable"
+   - "[state] budget neighborhoods near [primary_zip]"
+   - "ZIP codes surrounding [primary_zip] [state]"
+   
+   CRITICAL: Search within 4-5 MILE RADIUS of primary ZIP only
+   CRITICAL: MATCH ECONOMIC CONDITIONS - exclude different economic tiers
+   CRITICAL: Same state only - NO cross-state results
+   CRITICAL: If primary ZIP is affluent (e.g., Princeton 08540), exclude working-class areas (e.g., Trenton 08601)
+   CRITICAL: Example: For 08540 Princeton NJ (wealthy), find affluent ZIPs within 5 miles in NJ only
 
-5. SET TIMEFRAME:
-   - Default: 6 months for sold homes
-   - Extract if user specifies ("last year", "past 3 months", etc.)
+5. DETERMINE SEARCH PARAMETERS:
+   - Radius: 4-5 miles (fixed radius around primary ZIP code)
+   - State: SAME STATE only
+   - Economic Match: SAME ECONOMIC TIER as primary ZIP (mandatory)
+   - Timeframe: 6 months for sold homes (default)
+   - CRITICAL: Must meet ALL three criteria:
+     1. Within 4-5 miles of primary ZIP
+     2. Same state
+     3. Same economic conditions/tier
+   - CRITICAL: Do NOT prioritize geography over economic tier - both are REQUIRED, not optional
 
-OUTPUT FORMAT (JSON ONLY):
+OUTPUT FORMAT (JSON only, no markdown):
 {{
     "location": {{
         "type": "zip|address|city",
-        "value": "extracted location",
-        "zip": "primary ZIP if available",
-        "city": "city name",
-        "state": "state abbreviation"
+        "value": "extracted location string",
+        "zip": "5-digit ZIP if available or null",
+        "city": "city name or null",
+        "state": "2-letter state code or null"
     }},
     "intent": "property_valuation|market_analysis|comparison",
     "search_queries": [
-        "specific search query 1",
-        "specific search query 2",
-        "specific search query 3",
-        "specific search query 4",
-        "specific search query 5",
-        "specific search query 6",
-        "specific search query 7",
-        "specific search query 8"
+        "query 1",
+        "query 2",
+        "query 3",
+        "query 4",
+        "query 5",
+        "query 6",
+        "query 7",
+        "query 8"
     ],
     "search_radius_miles": 6,
     "timeframe_months": 6,
-    "specific_requirements": [
-        "list of what user wants to know"
-    ],
-    "confidence": 0.0-1.0
-}}
-
-EXAMPLES:
-
-Example 1:
-Input: "What's my home worth in 78701?"
-Output:
-{{
-    "location": {{"type": "zip", "value": "78701", "zip": "78701", "city": "Austin", "state": "TX"}},
-    "intent": "property_valuation",
-    "search_queries": [
-        "ZIP codes near 78701 Austin TX",
-        "neighboring ZIP codes 78701 Texas within 6 miles",
-        "Austin TX downtown ZIP codes surrounding",
-        "78701 adjacent ZIP codes same state Texas",
-        "Travis County Austin TX ZIP codes",
-        "ZIP codes within 5-6 miles 78701 Texas",
-        "USPS ZIP code lookup Austin TX downtown nearby",
-        "Austin Texas ZIP code map central 6 mile radius"
-    ],
-    "search_radius_miles": 6,
-    "timeframe_months": 6,
-    "specific_requirements": ["property_valuation", "comparable_homes"],
-    "confidence": 0.95
-}}
-
-Example 2:
-Input: "Show me the Austin market trends"
-Output:
-{{
-    "location": {{"type": "city", "value": "Austin TX", "city": "Austin", "state": "TX"}},
-    "intent": "market_analysis",
-    "search_queries": [
-        "Austin Texas central ZIP codes list",
-        "Austin TX surrounding ZIP codes within 6 miles",
-        "Travis County ZIP codes Austin Texas",
-        "Austin downtown Texas ZIP codes nearby",
-        "ZIP code map Austin Texas 6 mile radius",
-        "Austin TX metro area ZIP codes same state",
-        "USPS Austin Texas ZIP codes surrounding",
-        "Austin Texas ZIP code boundaries 6 miles"
-    ],
-    "search_radius_miles": 6,
-    "timeframe_months": 6,
-    "specific_requirements": ["market_trends", "price_trends", "inventory"],
-    "confidence": 0.9
-}}
-
-Example 3:
-Input: "Value 123 Main Street Austin TX 78701"
-Output:
-{{
-    "location": {{"type": "address", "value": "123 Main Street Austin TX 78701", "zip": "78701", "city": "Austin", "state": "TX"}},
-    "intent": "property_valuation",
-    "search_queries": [
-        "ZIP codes near 78701 Texas",
-        "78701 neighboring ZIP codes Austin TX within 5 miles",
-        "Austin TX 78701 surrounding areas same state",
-        "ZIP codes within 5-6 miles 78701 Texas",
-        "Travis County central ZIP codes Texas",
-        "Austin downtown area ZIP codes Texas",
-        "78702 78703 78704 78705 Austin Texas",
-        "USPS ZIP code radius 78701 Texas 5 miles"
-    ],
-    "search_radius_miles": 5,
-    "timeframe_months": 6,
-    "specific_requirements": ["property_valuation", "comparable_sales", "market_trends"],
-    "confidence": 1.0
+    "specific_requirements": ["list", "of", "needs"],
+    "confidence": 0.85
 }}
 
 CRITICAL RULES:
-1. Return ONLY valid JSON - no markdown, no explanation
-2. Make search queries SPECIFIC with actual location details
-3. Include the primary location in most queries
-4. Vary query styles to maximize ZIP discovery
-5. Don't make up ZIP codes - queries should help FIND them
-6. Focus on findable, real data sources (USPS, county sites, ZIP databases)
+1. Return ONLY valid JSON - no markdown, no code blocks
+2. Make queries SPECIFIC with actual location from user query
+3. Always include STATE name in queries to filter results
+4. SEARCH RADIUS: 4-5 miles from primary ZIP code (mandatory)
+5. Include economic tier keywords that match primary ZIP in queries
+6. Do NOT fabricate ZIP codes - queries help DISCOVER them
+7. Vary query styles to maximize discovery of comparable ZIPs within 4-5 mile radius
+8. CRITICAL: All comparables MUST meet THREE criteria:
+   - Within 4-5 miles of primary ZIP
+   - Same state
+   - Same economic tier/conditions
+9. CRITICAL: Economic tier MUST MATCH - geographic proximity alone is NOT sufficient
+10. CRITICAL EXAMPLE: 08540 Princeton NJ (affluent) cannot use 08601 Trenton NJ (working-class),
+    even though both are in NJ - they have different economic tiers. Must find affluent ZIPs within 5 miles of 08540.
 
-NOW ANALYZE THIS QUERY:
-"{user_query}"
-
+NOW ANALYZE THE USER QUERY.
 Return ONLY the JSON output.
 """
 
 
 def get_query_analysis_prompt_template() -> ChatPromptTemplate:
-    """
-    Get the query analysis prompt template
-    
-    Returns:
-        ChatPromptTemplate: Template for query analysis
-    """
+    """Get query analysis prompt template"""
     return ChatPromptTemplate.from_messages([
         HumanMessagePromptTemplate.from_template(QUERY_ANALYSIS_PROMPT),
     ])

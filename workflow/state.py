@@ -11,6 +11,9 @@ class RealEstateValuationState(TypedDict):
     user_query: str
     target_property: Dict[str, Any]
     
+    # Filter parameters for scraping
+    filters: Dict[str, Any]  # bedrooms, bathrooms, property_type, min_sqft, max_sqft, year_built, etc.
+    
     # Agent 1 outputs
     query_analysis: Dict[str, Any]
     
