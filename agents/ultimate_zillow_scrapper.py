@@ -334,6 +334,9 @@ class UltimateZillowScraper:
     def init_driver(self):
         """Initialize undetected Chrome driver with timeout handling"""
         try:
+            import os
+            import shutil
+            
             if self.driver:
                 try:
                     self.driver.quit()
@@ -348,49 +351,61 @@ class UltimateZillowScraper:
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-gpu')
             options.add_argument('--disable-web-resources')
-            # ✅ Disable HTTP keep-alive which causes urllib3 timeout issues
             options.add_argument('--disable-extensions')
             options.add_argument('--disable-plugins')
             
             if self.headless:
                 options.add_argument('--headless=new')
             
-            # ✅ Find Chrome binary path
-            import os
+            # ✅ Find Chrome binary path using multiple strategies
+            chrome_binary = None
+            
+            # Strategy 1: Check common system paths
             chrome_paths = [
                 '/usr/bin/google-chrome',
-                '/usr/bin/chromium-browser',
+                '/usr/bin/google-chrome-stable',
                 '/usr/bin/chromium',
+                '/usr/bin/chromium-browser',
                 '/snap/bin/chromium',
-                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-                '/Program Files/Google/Chrome/Application/chrome.exe',
+                '/usr/local/bin/chromium',
                 '/opt/google/chrome/chrome',
-                '/usr/local/bin/chrome'
             ]
             
-            chrome_binary = None
             for path in chrome_paths:
                 if os.path.exists(path):
                     chrome_binary = path
-                    logger.info(f"✓ Found Chrome at: {path}")
+                    logger.info(f"✓ Found Chrome binary at: {path}")
                     break
             
-            if chrome_binary:
-                options.binary_location = chrome_binary
+            # Strategy 2: Use 'which' command to find chrome
+            if not chrome_binary:
+                try:
+                    chrome_which = shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
+                    if chrome_which:
+                        chrome_binary = chrome_which
+                        logger.info(f"✓ Found Chrome using 'which': {chrome_binary}")
+                except:
+                    pass
             
-            # ✅ Set max connection pool timeout before driver creation
-            # This affects undetected-chromedriver's internal HTTP requests
+            # Strategy 3: Set binary location ONLY if found (avoid None)
+            if chrome_binary and isinstance(chrome_binary, str):
+                options.binary_location = chrome_binary
+                logger.info(f"✓ Set Chrome binary location: {chrome_binary}")
+            else:
+                logger.warning("⚠️  Chrome binary not found - letting undetected-chromedriver auto-detect")
+            
+            # ✅ Set timeout environment variable
             os.environ['REQUESTS_TIMEOUT'] = '45'
             
+            # Initialize driver without specifying binary if not found
             self.driver = uc.Chrome(options=options, use_subprocess=False, version_main=None)
             
-            # ✅ OPTIMIZED timeout - 45s
-            # 45s = fast fail-fast for better performance
-            self.driver.set_page_load_timeout(45)   # Skip slow pages faster
-            self.driver.set_script_timeout(30)      # Proportional to page load
-            self.driver.implicitly_wait(10)         # Element wait
+            # ✅ Set timeouts
+            self.driver.set_page_load_timeout(45)
+            self.driver.set_script_timeout(30)
+            self.driver.implicitly_wait(10)
             
-            logger.info("✓ Chrome driver initialized (45s page load timeout)")
+            logger.info("✓ Chrome driver initialized successfully (45s page load timeout)")
             return True
             
         except Exception as e:
