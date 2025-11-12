@@ -355,9 +355,31 @@ class UltimateZillowScraper:
             if self.headless:
                 options.add_argument('--headless=new')
             
+            # ✅ Find Chrome binary path
+            import os
+            chrome_paths = [
+                '/usr/bin/google-chrome',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium',
+                '/snap/bin/chromium',
+                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                '/Program Files/Google/Chrome/Application/chrome.exe',
+                '/opt/google/chrome/chrome',
+                '/usr/local/bin/chrome'
+            ]
+            
+            chrome_binary = None
+            for path in chrome_paths:
+                if os.path.exists(path):
+                    chrome_binary = path
+                    logger.info(f"✓ Found Chrome at: {path}")
+                    break
+            
+            if chrome_binary:
+                options.binary_location = chrome_binary
+            
             # ✅ Set max connection pool timeout before driver creation
             # This affects undetected-chromedriver's internal HTTP requests
-            import os
             os.environ['REQUESTS_TIMEOUT'] = '45'
             
             self.driver = uc.Chrome(options=options, use_subprocess=False, version_main=None)
@@ -373,6 +395,8 @@ class UltimateZillowScraper:
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize driver: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
             self.driver = None
             return False
     
