@@ -34,29 +34,40 @@ def main():
     
     
     # ============================================
-    # EXAMPLE 2: Single Property Valuation
+    # EXAMPLE 2: Single Property Valuation with Filters
     # ============================================
     
     print("\n" + "="*80)
-    print("EXAMPLE 2: Single Property Valuation")
+    print("EXAMPLE 2: Single Property Valuation with Filters")
     print("="*80)
     
     target_property = {
-        "address": "123 Main Street",
-        "city": "Austin",
-        "state": "TX",
-        "zipcode": "78701",
-        "bedrooms": 3,
-        "bathrooms": 2,
-        "sqft": 1800,
-        "year_built": 2015,
-        "property_type": "Single Family",
-        "asking_price": 450000
+        "address": "199 Hyde Park",
+        "city": "Somerset",
+        "state": "NJ",
+        "zipcode": "08873",
+        "bedrooms": 2,
+        "bathrooms": 3,
+        "sqft": 1400,
+        "year_built": 1986,
+        "property_type": "Townhouse",
+        "asking_price": 350000
+    }
+    
+    # Apply filters for similar properties
+    filters = {
+        "bedrooms": 2,
+        "bathrooms": 3,
+        "property_type": "townhouse",
+        "min_sqft": 1200,
+        "max_sqft": 1600,
+        "year_built": 1986
     }
     
     result2 = workflow.run(
-        user_query="Value my home at 123 Main Street Austin TX 78701",
-        target_property=target_property
+        user_query="Value my home at 199 Hyde Park Somerset NJ 08873",
+        target_property=target_property,
+        filters=filters
     )
     
     # Save results
@@ -77,23 +88,39 @@ def main():
     if result2.get('valuation_report'):
         valuation = result2['valuation_report']
         
-        print(f"\n🏠 PROPERTY: {target_property['address']}")
+        print(f"\n🏠 PROPERTY: {target_property['address']}, {target_property['city']} {target_property['state']} {target_property['zipcode']}")
+        print(f"   Type: {target_property.get('property_type', 'Unknown')} | {target_property.get('bedrooms')}bed / {target_property.get('bathrooms')}bath | {target_property.get('sqft'):,} sqft | Built {target_property.get('year_built')}")
         print(f"   Asking Price: ${target_property['asking_price']:,}")
         
         if 'estimated_value' in valuation:
             est_val = valuation['estimated_value']
             print(f"\n💰 VALUATION:")
-            print(f"   • Low Estimate: ${est_val.get('low', 0):,}")
-            print(f"   • Mid Estimate: ${est_val.get('mid', 0):,}")
-            print(f"   • High Estimate: ${est_val.get('high', 0):,}")
+            
+            # Convert to numbers safely (they may be strings from LLM)
+            def to_num(val):
+                if isinstance(val, str):
+                    val = val.replace('$', '').replace(',', '').strip()
+                    try:
+                        return float(val)
+                    except ValueError:
+                        return 0
+                return float(val) if val else 0
+            
+            low_est = to_num(est_val.get('low', 0))
+            mid_est = to_num(est_val.get('mid', 0))
+            high_est = to_num(est_val.get('high', 0))
+            
+            print(f"   • Low Estimate: ${low_est:,.0f}")
+            print(f"   • Mid Estimate: ${mid_est:,.0f}")
+            print(f"   • High Estimate: ${high_est:,.0f}")
             
             # Compare to asking
-            mid_val = est_val.get('mid', 0)
+            mid_val = mid_est
             diff = mid_val - target_property['asking_price']
             diff_pct = (diff / target_property['asking_price'] * 100) if target_property['asking_price'] > 0 else 0
             
             print(f"\n📊 VS ASKING PRICE:")
-            print(f"   • Difference: ${diff:,} ({diff_pct:+.1f}%)")
+            print(f"   • Difference: ${diff:,.0f} ({diff_pct:+.1f}%)")
             
             if diff_pct > 5:
                 print(f"   • Assessment: UNDERPRICED ✅")
@@ -102,11 +129,23 @@ def main():
             else:
                 print(f"   • Assessment: FAIRLY PRICED ✓")
         
+        # Handle both old and new confidence formats
+        confidence_level = "unknown"
+        confidence_score = 0
+        
         if 'confidence' in valuation:
             conf = valuation['confidence']
+            confidence_level = conf.get('overall_confidence', 'unknown')
+            confidence_score = conf.get('score', 0)
+        elif 'analysis_summary' in valuation:
+            summary = valuation['analysis_summary']
+            confidence_level = summary.get('confidence_level', 'unknown')
+            confidence_score = summary.get('confidence_score', 0)
+        
+        if confidence_level != "unknown":
             print(f"\n🎯 CONFIDENCE:")
-            print(f"   • Level: {conf.get('overall_confidence', 'unknown').upper()}")
-            print(f"   • Score: {conf.get('score', 0)*100:.0f}%")
+            print(f"   • Level: {confidence_level.upper()}")
+            print(f"   • Score: {confidence_score*100:.0f}%")
         
         if 'market_analysis' in valuation:
             market = valuation['market_analysis']

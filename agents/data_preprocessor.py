@@ -19,6 +19,7 @@ class DataPreprocessorAgent:
         self.max_price = 50000000
         self.min_sqft = 200
         self.max_sqft = 50000
+        self.max_days_since_sold = 180  # ✅ Only use sold homes from last 6 months (180 days)
         self.valid_states = ['TX', 'CA', 'FL', 'NY', 'NJ', 'PA', 'IL', 'OH', 'GA', 'NC', 'VA', 'MA', 'WA', 'AZ', 'TN', 'IN', 'MO', 'MD', 'WI', 'CO', 'MN', 'SC', 'AL', 'LA', 'KY', 'OR', 'OK', 'CT', 'UT', 'IA', 'NV', 'AR', 'MS', 'KS', 'NM', 'NE', 'ID', 'WV', 'HI', 'NH', 'ME', 'MT', 'RI', 'DE', 'SD', 'ND', 'AK', 'VT', 'WY']
     
     def preprocess_data(self, scraped_data: Dict, target_property: Dict = None) -> Dict:
@@ -37,22 +38,32 @@ class DataPreprocessorAgent:
         print(f"🔧 AGENT 4: Data Preprocessing & Quality")
         print(f"{'='*80}\n")
         
-        sold_homes = scraped_data['sold_homes']
-        for_sale_homes = scraped_data['for_sale_homes']
+        # ✅ Handle FOR-SALE only data (no sold_homes key)
+        sold_homes = scraped_data.get('sold_homes', [])
+        for_sale_homes = scraped_data.get('for_sale_homes', [])
+        
+        # Normalize property keys: beds→bedrooms, baths→bathrooms
+        sold_homes = self._normalize_property_keys(sold_homes)
+        for_sale_homes = self._normalize_property_keys(for_sale_homes)
         
         print(f"📥 Input Data:")
         print(f"   • Raw Sold Homes: {len(sold_homes)}")
         print(f"   • Raw For-Sale Homes: {len(for_sale_homes)}\n")
         
         # Filter sold homes
-        print("🧹 Filtering sold homes...")
-        filtered_sold, sold_excluded = self._filter_properties(sold_homes, target_property)
-        print(f"   ✅ Kept: {len(filtered_sold)}")
-        print(f"   ❌ Excluded: {len(sold_excluded)}\n")
+        if sold_homes:
+            print("🧹 Filtering sold homes...")
+            filtered_sold, sold_excluded = self._filter_properties(sold_homes, target_property, is_sold=True)
+            print(f"   ✅ Kept: {len(filtered_sold)}")
+            print(f"   ❌ Excluded: {len(sold_excluded)}\n")
+        else:
+            print("⚠️  No sold homes to filter (using FOR-SALE only)\n")
+            filtered_sold = []
+            sold_excluded = []
         
         # Filter for-sale homes  
         print("🧹 Filtering for-sale homes...")
-        filtered_for_sale, for_sale_excluded = self._filter_properties(for_sale_homes, target_property)
+        filtered_for_sale, for_sale_excluded = self._filter_properties(for_sale_homes, target_property, is_sold=False)
         print(f"   ✅ Kept: {len(filtered_for_sale)}")
         print(f"   ❌ Excluded: {len(for_sale_excluded)}\n")
         
@@ -63,7 +74,23 @@ class DataPreprocessorAgent:
         # Rank comparables if target property provided
         if target_property:
             print("🎯 Ranking comparables by similarity...")
-            filtered_sold = self._rank_comparables(filtered_sold, target_property)
+            # If we have sold homes, rank them. Otherwise rank for-sale homes
+            if filtered_sold:
+                filtered_sold = self._rank_comparables(filtered_sold, target_property)
+            elif filtered_for_sale:
+                print("   ⚠️  No sold homes available, ranking FOR-SALE properties instead")
+                filtered_for_sale = self._rank_comparables(filtered_for_sale, target_property)
+        
+        # Remove duplicate addresses from both lists
+        print("🔍 Removing duplicate addresses...")
+        filtered_sold_before = len(filtered_sold)
+        filtered_for_sale_before = len(filtered_for_sale)
+        
+        filtered_sold = self._remove_duplicate_addresses(filtered_sold)
+        filtered_for_sale = self._remove_duplicate_addresses(filtered_for_sale)
+        
+        print(f"   • Sold homes: {filtered_sold_before} → {len(filtered_sold)} (removed {filtered_sold_before - len(filtered_sold)} duplicates)")
+        print(f"   • For-sale homes: {filtered_for_sale_before} → {len(filtered_for_sale)} (removed {filtered_for_sale_before - len(filtered_for_sale)} duplicates)\n")
         
         # Calculate data quality score
         quality_score = self._calculate_quality_score(
@@ -110,7 +137,7 @@ class DataPreprocessorAgent:
             "preprocessing_timestamp": datetime.now().isoformat()
         }
     
-    def _filter_properties(self, properties: List[Dict], target_property: Dict = None) -> tuple:
+    def _filter_properties(self, properties: List[Dict], target_property: Dict = None, is_sold: bool = False) -> tuple:
         """Filter properties based on data quality and geographic relevance with detailed logging"""
         
         filtered = []
@@ -124,10 +151,16 @@ class DataPreprocessorAgent:
             if target_state:
                 print(f"   🎯 Target State: {target_state} (from '{target_address}')")
         
+        # Get target specs for comparison
+        target_beds = target_property.get('bedrooms') if target_property else None
+        target_baths = target_property.get('bathrooms') if target_property else None
+        if target_beds or target_baths:
+            print(f"   🏠 Target Specs: {target_beds}bed / {target_baths}bath")
+        
         print(f"   🔍 Analyzing {len(properties)} properties...")
         
         for i, prop in enumerate(properties):
-            exclusion_reason = self._should_exclude(prop, target_state)
+            exclusion_reason = self._should_exclude(prop, target_state, target_beds, target_baths, is_sold=is_sold)
             
             if exclusion_reason:
                 prop['exclusion_reason'] = exclusion_reason
@@ -137,22 +170,29 @@ class DataPreprocessorAgent:
                 if i < 5:  # Show details for first 5 excluded properties
                     address = prop.get('address', 'Unknown Address')[:50]
                     price = prop.get('price', 'N/A')
-                    sqft = prop.get('living_area_sqft', 'N/A')
+                    beds = prop.get('bedrooms', 'N/A')
+                    baths = prop.get('bathrooms', 'N/A')
                     print(f"      ❌ {address} - Excluded: {exclusion_reason}")
-                    print(f"         Price: {price}, Sqft: {sqft}")
+                    print(f"         Price: {price}, {beds}bed/{baths}bath")
             else:
                 filtered.append(prop)
                 
                 # Log first few accepted properties for transparency
                 if len(filtered) <= 5:
                     address = prop.get('address', 'Unknown Address')[:50]
-                    price = prop.get('price', 0)
-                    sqft = prop.get('living_area_sqft', 0)
-                    beds = prop.get('bedrooms', 0)
-                    baths = prop.get('bathrooms', 0)
-                    price_per_sqft = prop.get('price_per_sqft', 0)
+                    price = prop.get('price', 0) or 0
+                    sqft = prop.get('living_area_sqft', 0) or 0
+                    beds = prop.get('bedrooms', 0) or 0
+                    baths = prop.get('bathrooms', 0) or 0
+                    price_per_sqft = (prop.get('price_per_sqft') or 0)  # ✅ Ensure never None
+                    
+                    # Safe formatting with None checks
+                    price_str = f"${int(price):,}" if price else "N/A"
+                    sqft_str = f"{int(sqft):,} sqft" if sqft else "N/A sqft"
+                    ppsf_str = f"${price_per_sqft:.0f}/sqft" if price_per_sqft else "N/A/sqft"
+                    
                     print(f"      ✅ {address}")
-                    print(f"         ${price:,} | {sqft:,} sqft | {beds}bed/{baths}bath | ${price_per_sqft:.0f}/sqft")
+                    print(f"         {price_str} | {sqft_str} | {beds}bed/{baths}bath | {ppsf_str}")
         
         # Log summary of filtering results
         if len(excluded) > 5:
@@ -160,7 +200,7 @@ class DataPreprocessorAgent:
         
         return filtered, excluded
     
-    def _should_exclude(self, prop: Dict, target_state: str = None) -> str:
+    def _should_exclude(self, prop: Dict, target_state: str = None, target_beds: int = None, target_baths: float = None, is_sold: bool = False) -> str:
         """Check if property should be excluded, return reason if yes"""
         
         # Must have price
@@ -172,35 +212,64 @@ class DataPreprocessorAgent:
         if prop['price'] < self.min_price or prop['price'] > self.max_price:
             return "price_out_of_range"
         
-        # Must have square footage
-        if not prop.get('living_area_sqft'):
-            return "missing_sqft"
+        # ✅ For SOLD homes, check if it was sold too long ago (outside 180 day window)
+        if is_sold:
+            last_sold_date = prop.get('last_sold_date') or prop.get('date_sold')
+            if last_sold_date:
+                try:
+                    sold_date = datetime.fromisoformat(str(last_sold_date))
+                    days_since_sold = (datetime.now() - sold_date).days
+                    if days_since_sold > self.max_days_since_sold:
+                        return f"sold_too_long_ago_{days_since_sold}_days"
+                except:
+                    pass
         
-        # Sqft must be reasonable
-        if prop['living_area_sqft'] < self.min_sqft or prop['living_area_sqft'] > self.max_sqft:
+        # Square footage is optional (for comparables) but if present must be reasonable
+        sqft = prop.get('living_area_sqft')
+        if sqft and (sqft < self.min_sqft or sqft > self.max_sqft):
             return "sqft_out_of_range"
         
-        # Price per sqft must be reasonable (if calculated)
-        if prop.get('price_per_sqft'):
-            if prop['price_per_sqft'] < 10 or prop['price_per_sqft'] > 5000:
-                return "price_per_sqft_outlier"
+        # If sqft is available, calculate price_per_sqft
+        if sqft and sqft > 0:
+            if prop.get('price_per_sqft'):
+                if prop['price_per_sqft'] < 10 or prop['price_per_sqft'] > 5000:
+                    return "price_per_sqft_outlier"
         
-        # Must have basic property info
-        if not prop.get('bedrooms') or not prop.get('bathrooms'):
-            return "missing_basic_info"
+        # Must have bedrooms and bathrooms (check for None, NaN, or negative values)
+        bedrooms = prop.get('bedrooms')
+        bathrooms = prop.get('bathrooms')
         
-        # State filtering - must be in same state as target property
+        # Check if bedrooms is missing, null, NaN, or invalid
+        if bedrooms is None or bedrooms == '' or (isinstance(bedrooms, (int, float)) and bedrooms <= 0):
+            return "missing_or_invalid_bedrooms"
+        
+        # Check if bathrooms is missing, null, NaN, or invalid
+        if bathrooms is None or bathrooms == '' or (isinstance(bathrooms, (int, float)) and bathrooms <= 0):
+            return "missing_or_invalid_bathrooms"
+        
+        # Check bedroom constraints (must be within +/- 1.5 of target)
+        if target_beds is not None:
+            if bedrooms < target_beds - 1.5 or bedrooms > target_beds + 1.5:
+                return f"bedrooms_out_of_range_{bedrooms}_vs_target_{target_beds}"
+        
+        # Check bathroom constraints (must be within +/- 1.5 of target)
+        if target_baths is not None:
+            if bathrooms < target_baths - 1.5 or bathrooms > target_baths + 1.5:
+                return f"bathrooms_out_of_range_{bathrooms}_vs_target_{target_baths}"
+        
+        # ✅ UPDATED: Don't exclude properties for state info - use them for market analysis!
+        # State filtering is now OPTIONAL - we want ALL data for cost-per-sqft calculations
         if target_state:
             prop_address = prop.get('address', '')
             prop_state = self._extract_state_from_address(prop_address)
             
-            if not prop_state:
-                return "missing_state_info"
-            
-            if prop_state != target_state:
+            # If state IS available and DIFFERENT, exclude it
+            if prop_state and prop_state != target_state:
                 return f"different_state_{prop_state}_vs_{target_state}"
+            
+            # If state is MISSING or SAME, ACCEPT it (don't exclude!)
         
-        # All checks passed
+        # All checks passed - INCLUDE property for analysis
         return None
     
     def _extract_state_from_address(self, address: str) -> str:
@@ -301,20 +370,25 @@ class DataPreprocessorAgent:
         print(f"\n   🏆 TOP COMPARABLES (by similarity):")
         for i, home in enumerate(sold_homes[:10]):  # Show top 10
             address = home.get('address', 'Unknown Address')[:45]
-            price = home.get('price', 0)
-            sqft = home.get('living_area_sqft', 0)
-            beds = home.get('bedrooms', 0)
-            baths = home.get('bathrooms', 0)
-            similarity = home.get('similarity_score', 0)
-            price_per_sqft = home.get('price_per_sqft', 0)
+            price = home.get('price', 0) or 0
+            sqft = home.get('living_area_sqft', 0) or 0
+            beds = home.get('bedrooms', 0) or 0
+            baths = home.get('bathrooms', 0) or 0
+            similarity = home.get('similarity_score', 0) or 0
+            price_per_sqft = (home.get('price_per_sqft') or 0)  # ✅ Ensure never None
             
             # Calculate key differences for logging
             sqft_diff = abs(sqft - target.get('sqft', 0)) / max(target.get('sqft', 1), 1) * 100
             bed_diff = abs(beds - target.get('bedrooms', 0)) if beds else 0
             bath_diff = abs(baths - target.get('bathrooms', 0)) if baths else 0
             
+            # Safe formatting with None checks
+            price_str = f"${int(price):,}" if price else "N/A"
+            sqft_str = f"{int(sqft):,}sqft" if sqft else "N/A"
+            ppsf_str = f"${price_per_sqft:.0f}/sqft" if price_per_sqft else "N/A/sqft"
+            
             print(f"      #{i+1:2d}. {address}")
-            print(f"          ${price:,} | {sqft:,}sqft | {beds}bed/{baths}bath | ${price_per_sqft:.0f}/sqft")
+            print(f"          {price_str} | {sqft_str} | {beds}bed/{baths}bath | {ppsf_str}")
             print(f"          Similarity: {similarity:.2f} | Diffs: {sqft_diff:.0f}% sqft, {bed_diff} beds, {bath_diff:.1f} baths")
             
         return sold_homes
@@ -403,3 +477,58 @@ class DataPreprocessorAgent:
             reasons[reason] = reasons.get(reason, 0) + 1
         
         return reasons
+    
+    def _normalize_property_keys(self, properties: List[Dict]) -> List[Dict]:
+        """Normalize property keys from beds/baths to bedrooms/bathrooms"""
+        for prop in properties:
+            # Rename beds → bedrooms if not already present
+            if 'beds' in prop and 'bedrooms' not in prop:
+                prop['bedrooms'] = prop.pop('beds')
+            
+            # Rename baths → bathrooms if not already present
+            if 'baths' in prop and 'bathrooms' not in prop:
+                prop['bathrooms'] = prop.pop('baths')
+            
+            # Rename living_area → living_area_sqft if not already present
+            if 'living_area' in prop and 'living_area_sqft' not in prop:
+                prop['living_area_sqft'] = prop.get('living_area')
+            
+            # ✅ Ensure living_area_sqft is never None (default to 0)
+            if prop.get('living_area_sqft') is None:
+                prop['living_area_sqft'] = 0
+            
+            # Calculate price_per_sqft if missing
+            if not prop.get('price_per_sqft') and prop.get('price') and prop.get('living_area_sqft'):
+                if prop['living_area_sqft'] > 0:
+                    prop['price_per_sqft'] = prop['price'] / prop['living_area_sqft']
+                else:
+                    prop['price_per_sqft'] = 0
+            
+            # ✅ Ensure price_per_sqft is never None (default to 0 if can't calculate)
+            if prop.get('price_per_sqft') is None:
+                prop['price_per_sqft'] = 0
+            
+            # ✅ Ensure bedrooms and bathrooms are never None (default to 0)
+            if prop.get('bedrooms') is None:
+                prop['bedrooms'] = 0
+            if prop.get('bathrooms') is None:
+                prop['bathrooms'] = 0
+        
+        return properties
+    
+    def _remove_duplicate_addresses(self, properties: List[Dict]) -> List[Dict]:
+        """Remove duplicate properties by address, keeping first occurrence"""
+        seen_addresses = set()
+        unique_properties = []
+        
+        for prop in properties:
+            address = prop.get('address', '').strip().lower()
+            
+            if address and address not in seen_addresses:
+                seen_addresses.add(address)
+                unique_properties.append(prop)
+            elif not address:
+                # If no address, include it anyway (can't deduplicate without address)
+                unique_properties.append(prop)
+        
+        return unique_properties
