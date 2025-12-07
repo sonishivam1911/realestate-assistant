@@ -1,44 +1,73 @@
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
 
 
-EMAIL_GENERATION_PROMPT = """You are a professional real estate valuation expert. Create a SHORT, PUNCHY email explaining property valuation in under 10 lines.
+EMAIL_GENERATION_PROMPT = """You are a professional real estate valuation expert. Create a concise, professional email explaining property valuation in 2-3 short paragraphs.
 
 TARGET PROPERTY: {target_property_details}
 VALUATION: {valuation_summary}
 COMPARABLES: {comparable_properties}
 
 STRICT REQUIREMENTS:
-1. Max 10 lines total - be brutally concise
-2. NO headers, NO sections, NO markdown formatting
-3. NO confidence level mention (it's redundant)
-4. NO repeated headers like "Market Analysis:" or "Recommendations:" 
-5. Plain paragraph format only
-6. Include property names as clickable links in body: [Property Address](URL)
-7. Subject: Under 10 words, specific, professional
+1. 2-3 short paragraphs (15-20 lines total max)
+2. NO headers, NO sections, NO bullet points, NO markdown formatting
+3. Plain paragraph format only - natural flowing prose
+4. Professional but friendly tone
+5. Subject line: Under 10 words, specific, professional
 
-MUST INCLUDE (woven naturally into paragraphs):
-- Estimated value vs asking price
-- Why this valuation (1-2 lines max of explanation)
-- List 3-5 top comparable properties with links
-- Recommended action
+PARAGRAPH 1 - EXECUTIVE SUMMARY (3-5 lines):
+- Open with greeting using recipient name
+- State estimated value vs asking price with clear numbers (format: $XXX,XXX)
+- State verdict clearly (overpriced/underpriced/fairly priced)
+- Brief 1-2 sentence explanation of WHY this valuation (key factors driving the number)
 
-MUST SKIP (too verbose):
-- Confidence level / Medium/High labels
+PARAGRAPH 2 - COMPARABLE PROPERTIES (5-8 lines):
+- Introduce the comparable properties used for analysis
+- List 3-5 top comparable properties as clickable links with prices
+- Format EXACTLY as: [Full Property Address](zillow_url) at $XXX,XXX
+- CRITICAL: Use the actual Zillow URLs from comparable_properties data
+- CRITICAL: Format prices correctly with commas (e.g., $450,000 not 450000)
+- Keep this section flowing naturally, not as a list
+
+PARAGRAPH 3 - RECOMMENDATION & NEXT STEPS (3-5 lines):
+- Clear pricing recommendation (specific dollar amount)
+- Suggested next steps (e.g., "schedule a call to discuss", "adjust listing price", etc.)
+- Warm closing encouraging action
+
+FORMATTING RULES:
+- All prices MUST be formatted as: $XXX,XXX (with dollar sign and commas)
+- Property links MUST be: [Full Address](URL) - use actual URLs from data
+- NO broken formatting like "295730whichis" - always add commas and spaces
+- NO placeholder text like "__Property Name__" - use actual clickable markdown links
+- Ensure proper spacing between words and numbers
+
+SKIP ENTIRELY:
+- Confidence level mentions (Medium/High/Low)
 - Market trend discussions
-- Property feature details
-- Price per sqft explanations
-- Lengthy recommendations
+- Property feature comparisons (beds/baths/sqft details)
+- Price per sqft breakdowns
+- Verbose explanations
 
-EXAMPLE FORMAT:
+EXAMPLE OUTPUT:
 
-Subject: Quick Market Valuation - 123 Main St
+Subject: Market Valuation - 262 Kempsey Dr
 
-Hi Sarah, your property at 123 Main St is valued at $450,000 compared to your asking price of $500,000. Based on 5 comparable sales in the area, the market supports a slightly lower price point. Key comparable sales: [Elm Street Property](URL1), [Oak Avenue Home](URL2), [Maple Drive Residence](URL3). We recommend pricing at $465,000 for a competitive edge. Call me to discuss next steps.
+Hi Sarah,
+
+Your property at 262 Kempsey Dr, North Brunswick, NJ is valued at $295,730, which is $51,270 lower than your asking price of $347,000, indicating the property is currently overpriced. This valuation is based on recent comparable sales in your area showing similar properties selling at lower price points, particularly townhomes built in the 1980s with similar square footage.
+
+Based on our analysis of the local market, we reviewed several comparable properties: [63 Pennsylvania Way, North Brunswick](https://www.zillow.com/...) at $285,000, [318 Wimbledon Ct, North Brunswick](https://www.zillow.com/...) at $305,000, [1224 Dogwood Ct, North Brunswick](https://www.zillow.com/...) at $290,000, and [156 Tamarack Way, North Brunswick](https://www.zillow.com/...) at $298,500. These properties share similar characteristics with yours and have recently sold or are listed in your neighborhood.
+
+We recommend adjusting your listing price to $310,000 to attract more buyers and remain competitive. I'd be happy to schedule a call this week to discuss pricing strategy and next steps for your listing. Please let me know what works best for your schedule.
 
 Best regards,
 Real Estate Team
 
-BE CONCISE. NO VERBOSITY. 10 LINES MAX.
+CRITICAL REMINDERS:
+- Format ALL prices with $ and commas: $347,000 NOT 347000
+- Use REAL Zillow URLs from the comparable_properties data
+- Keep it to 2-3 paragraphs, NO MORE
+- NO headers, NO sections, just flowing paragraphs
+- Be concise but informative
 """
 
 

@@ -160,7 +160,7 @@ class PropertyCardDisplay:
             # Display image if available
             if image_url:
                 try:
-                    st.image(image_url, use_column_width=True, caption="Property Image")
+                    st.image(image_url, width='stretch', caption="Property Image")
                 except:
                     st.info("📷 Image not available")
             else:

@@ -144,7 +144,7 @@ def display_email_section(email_data: Dict, reflection_result: Dict = None):
                 "📋 Copy to Clipboard",
                 on_click=_copy_to_clipboard,
                 args=(full_email,),
-                use_container_width=True
+                width='stretch'
             )
         
         with col2:
@@ -154,7 +154,7 @@ def display_email_section(email_data: Dict, reflection_result: Dict = None):
                 data=full_email,
                 file_name="client_email.txt",
                 mime="text/plain",
-                use_container_width=True
+                width='stretch'
             )
     
     # Show reflection notes if available

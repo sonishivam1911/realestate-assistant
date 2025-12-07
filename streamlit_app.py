@@ -342,10 +342,10 @@ with st.sidebar:
         st.info("🎯 Price Filter: All prices")
     
     st.markdown("---")
-    run_valuation = st.button("🚀 Run Valuation", use_container_width=True, type="primary")
+    run_valuation = st.button("🚀 Run Valuation", width='stretch', type="primary")
     
     # Reset button
-    if st.button("🔄 Reset", use_container_width=True):
+    if st.button("🔄 Reset", width='stretch'):
         st.session_state.workflow_state = None
         st.session_state.workflow_stage = 'input'
         st.session_state.selected_property_indices = set()
@@ -400,8 +400,7 @@ if st.session_state.workflow_stage == 'scraping':
                 st.image(
                     property_details['image_url'], 
                     caption="Subject Property",
-                    width=400,
-                    use_container_width=False
+                    width=400
                 )
             except Exception as e:
                 st.write("📷 *Image not available*")
@@ -519,8 +518,7 @@ elif st.session_state.workflow_stage == 'selecting':
                 st.image(
                     property_details['image_url'], 
                     caption="Subject Property",
-                    width=400,
-                    use_column_width=False
+                    width=400
                 )
             except Exception as e:
                 st.write("📷 *Image not available*")
@@ -547,11 +545,11 @@ elif st.session_state.workflow_stage == 'selecting':
         # Select all / Deselect all buttons
         col1, col2, col3 = st.columns([1, 1, 4])
         with col1:
-            if st.button("✅ Select All", use_container_width=True):
+            if st.button("✅ Select All", width='stretch'):
                 st.session_state.selected_property_indices = set(range(len(available_properties)))
                 st.rerun()
         with col2:
-            if st.button("❌ Clear All", use_container_width=True):
+            if st.button("❌ Clear All", width='stretch'):
                 st.session_state.selected_property_indices = set()
                 st.rerun()
         
@@ -575,8 +573,7 @@ elif st.session_state.workflow_stage == 'selecting':
                             st.image(
                                 prop['image_url'], 
                                 caption=f"Property #{idx + 1}",
-                                width=300,
-                                use_column_width=False
+                                width=300
                             )
                         except Exception as e:
                             st.write("📷 *Image not available*")
@@ -629,7 +626,7 @@ elif st.session_state.workflow_stage == 'selecting':
         else:
             st.info(f"✅ **{selected_count}** properties selected")
             
-            if st.button("🚀 Continue to Valuation", type="primary", use_container_width=True):
+            if st.button("🚀 Continue to Valuation", type="primary", width='stretch'):
                 st.session_state.workflow_stage = 'valuing'
                 st.rerun()
 
@@ -647,8 +644,7 @@ elif st.session_state.workflow_stage == 'valuing':
                 st.image(
                     property_details['image_url'], 
                     caption="Subject Property",
-                    width=400,
-                    use_column_width=False
+                    width=400
                 )
             except Exception as e:
                 st.write("📷 *Image not available*")
@@ -748,8 +744,7 @@ elif st.session_state.workflow_stage == 'complete':
                 st.image(
                     property_details['image_url'], 
                     caption="Subject Property",
-                    width=400,
-                    use_column_width=False
+                    width=400
                 )
             except Exception as e:
                 st.write("📷 *Image not available*")
@@ -910,12 +905,12 @@ elif st.session_state.workflow_stage == 'complete':
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("� Create Email", use_container_width=True, type="secondary"):
+        if st.button("� Create Email", width='stretch', type="secondary"):
             st.session_state.workflow_stage = 'email_creation'
             st.rerun()
     
     with col2:
-        if st.button("�🔄 Analyze New Property", use_container_width=True, type="primary"):
+        if st.button("�🔄 Analyze New Property", width='stretch', type="primary"):
             # Reset everything
             st.session_state.workflow_state = None
             st.session_state.workflow_stage = 'input'
@@ -927,7 +922,7 @@ elif st.session_state.workflow_stage == 'complete':
             st.rerun()
     
     with col3:
-        if st.button("◀️ Back to Property Selection", use_container_width=True):
+        if st.button("◀️ Back to Property Selection", width='stretch'):
             st.session_state.workflow_stage = 'selecting'
             st.rerun()
     
@@ -950,7 +945,7 @@ elif st.session_state.workflow_stage == 'email_creation':
                     property_details['image_url'], 
                     caption="Subject Property",
                     width=400,
-                    use_column_width=False
+                    
                 )
             except Exception as e:
                 st.write("📷 *Image not available*")
@@ -1042,8 +1037,7 @@ elif st.session_state.workflow_stage == 'email_creation':
                             st.image(
                                 property_details['image_url'],
                                 caption="Property Image",
-                                width=200,
-                                use_column_width=True
+                                width=200
                             )
                         with col_text:
                             st.markdown("### 📧 Client Email Preview")
@@ -1060,15 +1054,83 @@ elif st.session_state.workflow_stage == 'email_creation':
                 
                 st.markdown("---")
                 st.markdown("**Email Content:**")
+                st.markdown("---")
+
+                import re
+
+                # Add custom CSS for email styling
+                st.markdown("""
+                <style>
+                .email-content {
+                    background-color: #ffffff;
+                    padding: 2rem;
+                    border-radius: 8px;
+                    border: 1px solid #e0e0e0;
+                    line-height: 1.8;
+                    color: #1a1a1a;
+                    font-size: 1rem;
+                }
+
+                .email-content p {
+                    margin-bottom: 1.5rem;
+                }
+
+                .email-content a {
+                    color: #1f77b4;
+                    text-decoration: none;
+                    font-weight: 500;
+                    border-bottom: 1px solid transparent;
+                    transition: border-bottom 0.2s ease;
+                }
+
+                .email-content a:hover {
+                    border-bottom: 1px solid #1f77b4;
+                }
+
+                .email-greeting {
+                    font-style: italic;
+                    color: #333;
+                }
+
+                .email-closing {
+                    margin-top: 2rem;
+                    font-style: italic;
+                    color: #555;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                # Convert markdown links to HTML
+                def format_email_html(text):
+                    # Convert markdown links to HTML
+                    pattern = r'\[([^\]]+)\]\(([^\)]+)\)'
+                    text = re.sub(pattern, r'<a href="\2" target="_blank">\1</a>', text)
+                    
+                    # Split into paragraphs
+                    paragraphs = text.split('\n')
+                    
+                    html_parts = ['<div class="email-content">']
+                    
+                    for i, para in enumerate(paragraphs):
+                        para = para.strip()
+                        if para:
+                            if i == 0:
+                                # First paragraph (greeting)
+                                html_parts.append(f'<p class="email-greeting">{para}</p>')
+                            elif 'Best regards' in para or 'Sincerely' in para:
+                                # Closing
+                                html_parts.append(f'<p class="email-closing">{para}</p>')
+                            else:
+                                # Regular paragraph
+                                html_parts.append(f'<p>{para}</p>')
+                    
+                    html_parts.append('</div>')
+                    return ''.join(html_parts)
+
+                # Format and display
+                formatted_html = format_email_html(email_body)
+                st.markdown(formatted_html, unsafe_allow_html=True)
                 
-                # Display email body with better formatting
-                # Convert any property links to clickable links
-                formatted_body = email_body
-                
-                # Display the formatted email body
-                st.markdown(formatted_body)
-                
-                # Show comparable properties with images if available
                 if st.session_state.workflow_state:
                     selected_properties = st.session_state.workflow_state.get('selected_properties', [])
                     if selected_properties:
@@ -1086,8 +1148,7 @@ elif st.session_state.workflow_stage == 'email_creation':
                                             st.image(
                                                 prop['image_url'],
                                                 caption="Property",
-                                                width=150,
-                                                use_column_width=True
+                                                width=150
                                             )
                                         except:
                                             st.write("📷 *Image not available*")
@@ -1110,7 +1171,6 @@ elif st.session_state.workflow_stage == 'email_creation':
                                         st.markdown(f"🔗 **[View on Zillow]({prop['url']})**")
             
             with tab2:
-                # Editable email section
                 st.markdown("### Manual Edits")
                 st.info("💡 Make direct changes to the email content below")
                 
@@ -1129,7 +1189,7 @@ elif st.session_state.workflow_stage == 'email_creation':
                     key=f"body_edit_{st.session_state.email_iterations}"
                 )
                 
-                if st.button("💾 Save Manual Edits", use_container_width=True):
+                if st.button("💾 Save Manual Edits", width='stretch'):
                     st.session_state.email_data['subject'] = edited_subject
                     st.session_state.email_data['body'] = edited_body
                     st.success("✅ Manual edits saved!")
@@ -1151,7 +1211,7 @@ elif st.session_state.workflow_stage == 'email_creation':
             col1, col2 = st.columns(2)
             
             with col1:
-                if st.button("🔄 Regenerate with Feedback", use_container_width=True, type="primary", disabled=not feedback.strip()):
+                if st.button("🔄 Regenerate with Feedback", width='stretch', type="primary", disabled=not feedback.strip()):
                     if feedback.strip():
                         # Add feedback to history
                         st.session_state.email_feedback_history.append({
@@ -1188,12 +1248,10 @@ elif st.session_state.workflow_stage == 'email_creation':
                                 st.error(f"❌ Error improving email: {str(e)}")
             
             with col2:
-                if st.button("✅ Email is Ready", use_container_width=True, type="secondary"):
-                    # Mark email as final
+                if st.button("✅ Email is Ready", width='stretch', type="secondary"):
                     st.session_state.email_final = True
                     st.success("🎉 Email finalized! Scroll down for copy/download options.")
             
-            # Show feedback history if exists
             if st.session_state.email_feedback_history:
                 st.markdown("---")
                 with st.expander(f"📋 Feedback History ({len(st.session_state.email_feedback_history)} iterations)"):
@@ -1203,7 +1261,6 @@ elif st.session_state.workflow_stage == 'email_creation':
                         if i < len(st.session_state.email_feedback_history):
                             st.markdown("---")
     
-    # Final email actions
     if st.session_state.email_data and st.session_state.get('email_final', False):
         st.markdown("---")
         st.markdown("## 🎬 Final Email Actions")
@@ -1219,17 +1276,17 @@ elif st.session_state.workflow_stage == 'email_creation':
                 data=full_email,
                 file_name=f"client_email_{st.session_state.email_recipient_name.replace(' ', '_').lower()}.txt",
                 mime="text/plain",
-                use_container_width=True
+                width='stretch'
             )
         
         with col2:
-            if st.button("📋 Copy to Clipboard", use_container_width=True):
+            if st.button("📋 Copy to Clipboard", width='stretch'):
                 # Simple copy functionality
                 st.code(full_email, language=None)
                 st.info("👆 Email content above - select all and copy (Ctrl+C / Cmd+C)")
         
         with col3:
-            if st.button("◀️ Back to Results", use_container_width=True):
+            if st.button("◀️ Back to Results", width='stretch'):
                 # Reset email state and go back to complete
                 st.session_state.email_data = {}
                 st.session_state.email_recipient_name = ''
@@ -1246,7 +1303,7 @@ elif st.session_state.workflow_stage == 'email_creation':
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🔄 Analyze New Property", use_container_width=True, type="primary"):
+            if st.button("🔄 Analyze New Property", width='stretch', type="primary"):
                 # Reset everything for new analysis
                 st.session_state.workflow_state = None
                 st.session_state.workflow_stage = 'input'
@@ -1264,7 +1321,7 @@ elif st.session_state.workflow_stage == 'email_creation':
                 st.rerun()
         
         with col2:
-            if st.button("📧 Create Another Email", use_container_width=True):
+            if st.button("📧 Create Another Email", width='stretch'):
                 # Reset email state but keep valuation
                 st.session_state.email_data = {}
                 st.session_state.email_recipient_name = ''

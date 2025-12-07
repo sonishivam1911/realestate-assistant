@@ -24,9 +24,12 @@ YOUR TASK: Analyze comparable sales and provide a data-driven valuation based pu
    - Square footage is ESSENTIAL for price-per-sqft calculations
    - If a property has sqft = 0 or missing → REJECT IT immediately
 
-2️⃣  EXACT BEDROOM & BATHROOM MATCHES ONLY
-   - All comparables in this list already match the target property's bed/bath count exactly
-   - If you notice any mismatches, do NOT use those properties
+2️⃣  BEDROOM & BATHROOM MATCHING
+   - Target property: {target_beds} bedrooms, {target_baths} bathrooms
+   - PRIORITIZE exact matches but accept close matches with adjusted reliability
+   - Exact match: full points (+0.2)
+   - Bedroom match only (bath differs by 1): partial points (+0.1)
+   - Bedroom mismatch: exclude completely
    
 3️⃣  SIMILAR SQUARE FOOTAGE (±15% tolerance)
    - Properties should be within 15% of target property sqft
@@ -34,6 +37,21 @@ YOUR TASK: Analyze comparable sales and provide a data-driven valuation based pu
    - Penalize significantly different sqft values in your calculations
 
 ANALYSIS METHODOLOGY:
+
+STEP 0: DATA QUALITY ASSESSMENT
+
+Before starting analysis, verify the input data:
+
+Review the COMPARABLE SALES DATA above and answer:
+1. Total properties in data: {total_properties_analyzed}
+2. How many have sqft > 0? ___ (count them now)
+3. How many have exact bed/bath match to target ({target_beds}bd/{target_baths}ba)? ___
+4. Data quality score: {data_quality_score}
+
+If data_quality_score < 0.5 OR less than 5 properties have sqft data:
+⚠️ WARNING: Limited data quality. Proceed with caution and assign MEDIUM or LOW confidence.
+
+Now proceed to Step 1.
 
 STEP 1: IDENTIFY ALL USABLE COMPARABLES
 
@@ -163,22 +181,25 @@ Count your comps from Step 1-2.5:
 Assign confidence:
 
 HIGH (0.80-1.0) if:
-- 10+ usable comps with sqft
-- $/sqft spread ≤ $200
-- 5+ exact bed/bath matches
+- 8+ usable comps with sqft (changed from 10+, more realistic)
+- $/sqft spread ≤ $150 (changed from $200, tighter)
+- 4+ exact bed/bath matches OR 6+ partial matches
 - Most similarity scores ≥0.8
+- Data quality score ≥0.7
 
 MEDIUM (0.60-0.79) if:
-- 6-9 usable comps with sqft
-- $/sqft spread $200-$300
-- 2-4 exact bed/bath matches
+- 5-7 usable comps with sqft (changed from 6-9)
+- $/sqft spread $150-$250 (adjusted)
+- 2-3 exact matches OR 4+ partial matches
 - Mix of similarity scores
+- Data quality score 0.5-0.69
 
 LOW (0.0-0.59) if:
-- <6 usable comps
-- $/sqft spread > $300
-- Few/no bed/bath matches
+- <5 usable comps (changed from <6)
+- $/sqft spread > $250 (adjusted)
+- Few/no matches
 - Poor similarity scores
+- Data quality score <0.5
 
 Your confidence: ___
 
