@@ -26,8 +26,16 @@ class RealEstateValuationState(TypedDict):
     # Agent 4 outputs
     preprocessed_data: Dict[str, Any]
     
+    # User Selection - Interrupt Point
+    selected_properties: List[Dict[str, Any]]  # Properties user selected from displayed cards
+    
     # Agent 5 outputs
     valuation_report: Dict[str, Any]
+    
+    # Agent 6 & 7 outputs (Email Generation & Reflection)
+    email_data: Dict[str, Any]
+    email_recipient_name: str
+    email_reflection_result: Dict[str, Any]
     
     # Metadata
     workflow_start_time: str
@@ -37,3 +45,7 @@ class RealEstateValuationState(TypedDict):
     # Error handling
     errors: List[str]
     warnings: List[str]
+    
+    # Workflow control
+    interrupt_flag: bool  # Flag to pause workflow for user interaction
+    available_properties: List[Dict[str, Any]]  # Properties available for selection

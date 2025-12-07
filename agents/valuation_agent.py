@@ -45,12 +45,33 @@ class ValuationJudgmentAgent:
         # Prepare context for LLM
         context = self._prepare_context(preprocessed_data, target_property)
         
+        # Extract asking price from target property
+        asking_price = target_property.get('asking_price', 0)
+        if isinstance(asking_price, str):
+            asking_price = asking_price.replace('$', '').replace(',', '').strip()
+        
+        asking_price_numeric = float(asking_price) if asking_price else 0
+        asking_price_formatted = f"${asking_price_numeric:,.0f}" if asking_price_numeric > 0 else "Unknown"
+        
+        # Extract target property details
+        target_sqft = target_property.get('sqft', 0)
+        target_beds = target_property.get('bedrooms', 0)
+        target_baths = target_property.get('bathrooms', 0)
+        
         print(f"Target Property: {target_property}\n")
+        print(f"Asking Price: {asking_price_formatted}\n")
+        print(f"Target Square Footage: {target_sqft:,} sqft\n")
+        print(f"Target Specs: {target_beds}bed / {target_baths}bath\n")
         print(f"Market Data Context: {context}\n")
         
-        # Create messages
+        # Create messages with asking_price included
         messages = self.prompt_template.invoke({
             "target_property": json.dumps(target_property, indent=2),
+            "target_sqft": target_sqft,
+            "target_beds": target_beds,
+            "target_baths": target_baths,
+            "asking_price": asking_price_formatted,
+            "asking_price_numeric": asking_price_numeric,
             "market_data": json.dumps(context, indent=2)
         })
         

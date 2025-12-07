@@ -630,22 +630,45 @@ class UltimateZillowScraper:
                         first_key = list(gdp_data.keys())[0]
                         prop_json = gdp_data[first_key].get('property', {})
                         
+                        # ✅ Extract square footage - CRITICAL for valuation!
+                        living_area_sqft = prop_json.get('livingArea')
+                        price = prop_json.get('price')
+                        
                         property_data.update({
                             'zpid': prop_json.get('zpid'),
                             'address': prop_json.get('address', {}).get('streetAddress'),
                             'city': prop_json.get('address', {}).get('city'),
                             'state': prop_json.get('address', {}).get('state'),
                             'zipcode': prop_json.get('address', {}).get('zipcode'),
-                            'price': prop_json.get('price'),
+                            'price': price,
                             'bedrooms': prop_json.get('bedrooms'),
                             'bathrooms': prop_json.get('bathrooms'),
-                            'living_area': prop_json.get('livingArea'),
+                            'living_area_sqft': living_area_sqft,  # ✅ Use correct key name
                             'home_type': prop_json.get('homeType'),
                             'home_status': prop_json.get('homeStatus'),
                             'year_built': prop_json.get('yearBuilt'),
                             'last_sold_price': prop_json.get('lastSoldPrice'),
                             'last_sold_date': prop_json.get('lastSoldDate'),
                         })
+                        
+                        # ✅ CALCULATE PRICE PER SQUARE FOOT (used in valuation)
+                        if price and living_area_sqft and living_area_sqft > 0:
+                            property_data['price_per_sqft'] = round(price / living_area_sqft, 2)
+                            logger.info(f"✅ Price/sqft calculated: ${property_data['price_per_sqft']:.2f}/sqft")
+                        
+                        # ✅ Log extracted square footage for verification
+                        if living_area_sqft:
+                            logger.info(f"✅ Square footage extracted: {living_area_sqft:,} sqft")
+                        else:
+                            logger.warning(f"⚠️  Square footage NOT found for property: {property_data.get('address')}")
+                        
+                        # ✅ Extract property images
+                        property_data['image_url'] = self._extract_property_image()
+                        if property_data.get('image_url'):
+                            logger.info(f"✅ Property image extracted")
+                        
+                        # ✅ Extract additional details
+                        property_data['days_on_market'] = prop_json.get('daysOnZillow')
                         
                         return property_data
                 
@@ -674,6 +697,55 @@ class UltimateZillowScraper:
             element = self.driver.find_element(by, selector)
             return element.text if attribute == 'text' else element.get_attribute(attribute)
         except:
+            return None
+    
+    def _extract_property_image(self) -> Optional[str]:
+        """
+        Extract the first/hero image from Zillow property detail page
+        
+        Returns:
+            Image URL string or None if not found
+        """
+        try:
+            # Try multiple selectors for images on Zillow
+            image_selectors = [
+                'img[alt*="photo"]',
+                'img[alt*="Photo"]',
+                'img[data-testid*="image"]',
+                'picture img',
+                'img.hdp-photo',
+                'img[class*="photo"]'
+            ]
+            
+            for selector in image_selectors:
+                try:
+                    images = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    if images:
+                        # Get the first image with a valid src
+                        for img in images:
+                            src = img.get_attribute('src')
+                            if src and ('zillow' in src or 'amazonaws' in src or 'http' in src):
+                                logger.debug(f"✓ Found image: {src[:50]}...")
+                                return src
+                except:
+                    continue
+            
+            # Fallback: Try to find any image with large src
+            try:
+                all_images = self.driver.find_elements(By.TAG_NAME, 'img')
+                for img in all_images:
+                    src = img.get_attribute('src')
+                    if src and len(src) > 50 and ('zillow' in src or 'amazonaws' in src):
+                        logger.debug(f"✓ Found image (fallback): {src[:50]}...")
+                        return src
+            except:
+                pass
+            
+            logger.debug("⚠️  No image found for this property")
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Image extraction error: {str(e)[:50]}")
             return None
     
     def cleanup(self):

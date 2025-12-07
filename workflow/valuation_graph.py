@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, END
-from typing import Dict
+from typing import Dict, List
 from datetime import datetime
 import time
 
@@ -9,6 +9,7 @@ from agents.zip_discovery import ZipDiscoveryAgent
 from agents.ultimate_zillow_scrapper import UltimateZillowScraper
 from agents.data_preprocessor import DataPreprocessorAgent
 from agents.valuation_agent import ValuationJudgmentAgent
+from agents.email_generator import EmailGeneratorAgent
 from zillow_filter_capture import ZillowFilterCapture
 
 
@@ -24,6 +25,7 @@ class RealEstateValuationGraph:
         self.scraper = None  # Will be initialized per scraping request
         self.preprocessor_agent = DataPreprocessorAgent()
         self.valuation_agent = ValuationJudgmentAgent()
+        self.email_generator = EmailGeneratorAgent()
         
         # Build the graph
         self.graph = self._build_graph()
@@ -45,19 +47,43 @@ class RealEstateValuationGraph:
         workflow.add_node("query_analysis", self._node_query_analysis)
         workflow.add_node("zip_discovery", self._node_zip_discovery)
         workflow.add_node("scraping", self._node_scraping)
+        workflow.add_node("user_selection", self._node_user_selection)
         workflow.add_node("preprocessing", self._node_preprocessing)
         workflow.add_node("valuation", self._node_valuation)
+        workflow.add_node("email_generation", self._node_email_generation)
         
-        # Define edges (linear flow for now)
+        # Define edges with conditional logic for interrupts
         workflow.set_entry_point("filter_capture")
         workflow.add_edge("filter_capture", "query_analysis")
         workflow.add_edge("query_analysis", "zip_discovery")
         workflow.add_edge("zip_discovery", "scraping")
-        workflow.add_edge("scraping", "preprocessing")
+        workflow.add_edge("scraping", "user_selection")
+        
+        # Conditional edge from user_selection - stop if interrupt, continue if selections made
+        workflow.add_conditional_edges(
+            "user_selection",
+            self._should_continue_after_user_selection,
+            {
+                "continue": "preprocessing",
+                "interrupt": END
+            }
+        )
+        
         workflow.add_edge("preprocessing", "valuation")
         workflow.add_edge("valuation", END)
         
         return workflow.compile()
+    
+    def _should_continue_after_user_selection(self, state: RealEstateValuationState) -> str:
+        """
+        Conditional function to decide if workflow should continue after user selection
+        """
+        if state.get('interrupt_flag'):
+            print(f"🔄 CONDITIONAL: Interrupt detected - stopping workflow for user input")
+            return "interrupt"
+        else:
+            print(f"🔄 CONDITIONAL: Properties selected - continuing workflow")
+            return "continue"
     
     # ==================== NODE FUNCTIONS ====================
     
@@ -276,8 +302,8 @@ class RealEstateValuationGraph:
             search_baths = target_baths - 1 if target_baths and target_baths > 1 else target_baths
             
             property_type = filters.get('property_type', 'townhouse').lower()
-            min_sqft = filters.get('min_sqft')
-            max_sqft = filters.get('max_sqft')
+            min_price = filters.get('min_price')
+            max_price = filters.get('max_price')
             year_built = filters.get('year_built')
             
             if filters:
@@ -290,8 +316,8 @@ class RealEstateValuationGraph:
                     print(f"   • Search Bathrooms: {search_baths} (one less for broader results)")
                 if property_type:
                     print(f"   • Property Type: {property_type}")
-                if min_sqft or max_sqft:
-                    print(f"   • Square Footage: {min_sqft or 'any'} - {max_sqft or 'any'} sqft")
+                if min_price or max_price:
+                    print(f"   • Price Range: ${min_price or '0':,} - ${max_price or '∞':,}")
                 if year_built:
                     print(f"   • Year Built: {year_built}")
             
@@ -322,6 +348,7 @@ class RealEstateValuationGraph:
                     
                     # Scrape FOR-SALE properties first (max 2 pages for efficiency)
                     self.scraper = UltimateZillowScraper(headless=False)
+                    
                     if not self.scraper.init_driver():
                         print(f"   ❌ Failed to initialize driver for ZIP {zip_code}")
                         stats['failed_zips'] += 1
@@ -335,7 +362,9 @@ class RealEstateValuationGraph:
                         status="for_sale",
                         property_type=property_type,
                         min_beds=search_beds,
-                        min_baths=search_baths
+                        min_baths=search_baths,
+                        min_price=min_price,
+                        max_price=max_price
                     )
                     print(f"   🔍 Searching FOR-SALE: {search_url}")
                     
@@ -458,6 +487,45 @@ class RealEstateValuationGraph:
         
         return state
     
+    def _node_user_selection(self, state: RealEstateValuationState) -> RealEstateValuationState:
+        """
+        Node 3.5: User Selection (Interrupt Point)
+        """
+        from langgraph.types import interrupt
+    
+        try:
+            for_sale_homes = state['scraped_data'].get('for_sale_homes', [])
+            
+            if not for_sale_homes:
+                print("⚠️  No properties found from scraping")
+                state['selected_properties'] = []
+                return state
+        
+            
+            # Check if selections already exist
+            selected = state.get('selected_properties', [])
+            
+            if selected and len(selected) > 0:
+                print(f"✅ {len(selected)} properties already selected by user")
+                return state
+            
+            # Use LangGraph's interrupt() - this actually pauses execution
+            user_input = interrupt({
+                "message": "Please select properties to continue",
+                "available_properties": for_sale_homes,
+                "total_count": len(for_sale_homes)
+            })
+            
+            # When resumed, user_input will contain the selected properties
+            state['selected_properties'] = user_input.get('selected_properties', [])
+
+        except Exception as e:
+            print(f"❌ User selection error: {str(e)}")
+            state['errors'].append(f"User Selection: {str(e)}")
+            state['selected_properties'] = []
+        
+        return state
+    
     def _node_preprocessing(self, state: RealEstateValuationState) -> RealEstateValuationState:
         """
         Node 4: Data Preprocessing Agent
@@ -556,6 +624,46 @@ class RealEstateValuationGraph:
         
         return state
     
+    def _node_email_generation(self, state: RealEstateValuationState) -> RealEstateValuationState:
+        """
+        Node 6: Email Generation Agent
+        Generates professional client email from valuation analysis
+        """
+        
+        print(f"\n{'#'*80}")
+        print(f"# NODE 6: EMAIL GENERATION")
+        print(f"{'#'*80}")
+        
+        try:
+            recipient_name = state.get('email_recipient_name', 'Valued Client')
+            
+            if not recipient_name or recipient_name == '':
+                recipient_name = 'Valued Client'
+            
+            # Call Email Generator Agent
+            email_data = self.email_generator.generate_email(state, recipient_name)
+            
+            # Update state
+            state['email_data'] = email_data
+            
+            print(f"✅ Email generated successfully")
+            
+        except Exception as e:
+            print(f"❌ Email generation failed: {str(e)}")
+            state['errors'].append(f"Email Generation: {str(e)}")
+            # Provide fallback
+            state['email_data'] = {
+                "subject": "Property Valuation Report",
+                "body": "Email generation encountered an error. Please contact support.",
+                "recipient_name": state.get('email_recipient_name', 'Valued Client'),
+                "property_address": state.get('target_property', {}).get('address', 'Unknown'),
+                "estimated_value": "N/A",
+                "comparable_count": 0,
+                "confidence_level": "Unknown"
+            }
+        
+        return state
+    
     # ==================== HELPER METHODS ====================
     
     def _validate_property_type(self, property_data: Dict, filter_type: str) -> bool:
@@ -604,7 +712,7 @@ class RealEstateValuationGraph:
     
     # ==================== MAIN EXECUTION ====================
     
-    def run(self, user_query: str, target_property: Dict = None, filters: Dict = None) -> Dict:
+    def run(self, user_query: str, target_property: Dict = None, filters: Dict = None, email_recipient_name: str = None, selected_properties: List = None) -> Dict:
         """
         Execute the complete workflow
         
@@ -612,6 +720,7 @@ class RealEstateValuationGraph:
             user_query: User's input query
             target_property: Optional target property details
             filters: Optional filters dict with bedrooms, bathrooms, property_type, sqft, year_built, etc.
+            email_recipient_name: Name of email recipient (client name) for email generation
         
         Returns:
             Complete workflow results as JSON
@@ -623,6 +732,14 @@ class RealEstateValuationGraph:
         print(f"Query: {user_query}")
         if filters:
             print(f"Filters: {filters}")
+        if email_recipient_name:
+            print(f"Email Recipient: {email_recipient_name}")
+        if selected_properties:
+            print(f"🔍 DEBUG: SELECTED PROPERTIES PROVIDED: {len(selected_properties)} properties")
+            for i, prop in enumerate(selected_properties[:3]):
+                print(f"   Property {i+1}: {prop.get('address', 'N/A')[:40]}")
+        else:
+            print(f"🔍 DEBUG: NO SELECTED PROPERTIES PROVIDED - will trigger interrupt")
         print(f"{'='*80}\n")
         
         start_time = time.time()
@@ -632,11 +749,14 @@ class RealEstateValuationGraph:
             "user_query": user_query,
             "target_property": target_property or {},
             "filters": filters or {},
+            "email_recipient_name": email_recipient_name or "Valued Client",
+            "selected_properties": selected_properties or [],
             "query_analysis": {},
             "zip_discovery": {},
             "scraped_data": {},
             "preprocessed_data": {},
             "valuation_report": {},
+            "email_data": {},
             "workflow_start_time": datetime.now().isoformat(),
             "workflow_end_time": "",
             "total_execution_time_seconds": 0.0,
@@ -645,8 +765,15 @@ class RealEstateValuationGraph:
         }
         
         try:
-            # Run the graph
+            # Run the graph with interrupt checking
             final_state = self.graph.invoke(initial_state)
+            
+            # Check if we hit an interrupt
+            if final_state.get('interrupt_flag'):
+                print(f"\n⏸️  WORKFLOW INTERRUPTED - returning partial state for UI")
+                print(f"   Interrupt reason: User property selection required")
+                print(f"   Available properties: {len(final_state.get('available_properties', []))}")
+                return final_state
             
             # Calculate execution time
             end_time = time.time()
@@ -711,5 +838,12 @@ class RealEstateValuationGraph:
                     confidence_str = val['analysis_summary'].get('confidence_level', 'unknown')
                 
                 print(f"   • Confidence: {confidence_str}")
+        
+        # Print email summary
+        if state.get('email_data'):
+            email = state['email_data']
+            print(f"\n📧 EMAIL SUMMARY:")
+            print(f"   • Subject: {email.get('subject', 'N/A')}")
+            print(f"   • Body Length: {len(email.get('body', '')) } characters")
         
         print(f"{'='*80}\n")

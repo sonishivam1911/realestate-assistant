@@ -154,13 +154,19 @@ class DataPreprocessorAgent:
         # Get target specs for comparison
         target_beds = target_property.get('bedrooms') if target_property else None
         target_baths = target_property.get('bathrooms') if target_property else None
-        if target_beds or target_baths:
-            print(f"   🏠 Target Specs: {target_beds}bed / {target_baths}bath")
+        target_sqft = target_property.get('sqft') if target_property else None
+        
+        if target_beds or target_baths or target_sqft:
+            print(f"   🏠 Target Specs: {target_beds}bed / {target_baths}bath / {target_sqft:,} sqft" if target_sqft else f"   🏠 Target Specs: {target_beds}bed / {target_baths}bath")
+            print(f"   � MATCHING STRATEGY:")
+            print(f"      1️⃣  PRICE RANGE: Applied via Zillow filters")
+            print(f"      2️⃣  BEDROOMS: ±1 tolerance")
+            print(f"      3️⃣  BATHROOMS: ±1 tolerance")
         
         print(f"   🔍 Analyzing {len(properties)} properties...")
         
         for i, prop in enumerate(properties):
-            exclusion_reason = self._should_exclude(prop, target_state, target_beds, target_baths, is_sold=is_sold)
+            exclusion_reason = self._should_exclude(prop, target_state, target_beds, target_baths, target_sqft, is_sold=is_sold)
             
             if exclusion_reason:
                 prop['exclusion_reason'] = exclusion_reason
@@ -200,8 +206,15 @@ class DataPreprocessorAgent:
         
         return filtered, excluded
     
-    def _should_exclude(self, prop: Dict, target_state: str = None, target_beds: int = None, target_baths: float = None, is_sold: bool = False) -> str:
-        """Check if property should be excluded, return reason if yes"""
+    def _should_exclude(self, prop: Dict, target_state: str = None, target_beds: int = None, target_baths: float = None, target_sqft: int = None, is_sold: bool = False) -> str:
+        """
+        Check if property should be excluded, return reason if yes
+        
+        Matching Strategy:
+        - Price range applied via Zillow filters (before scraping)
+        - Bedrooms: ±1 tolerance
+        - Bathrooms: ±1 tolerance
+        """
         
         # Must have price
         price = prop.get('price')
@@ -224,16 +237,8 @@ class DataPreprocessorAgent:
                 except:
                     pass
         
-        # Square footage is optional (for comparables) but if present must be reasonable
-        sqft = prop.get('living_area_sqft')
-        if sqft and (sqft < self.min_sqft or sqft > self.max_sqft):
-            return "sqft_out_of_range"
-        
-        # If sqft is available, calculate price_per_sqft
-        if sqft and sqft > 0:
-            if prop.get('price_per_sqft'):
-                if prop['price_per_sqft'] < 10 or prop['price_per_sqft'] > 5000:
-                    return "price_per_sqft_outlier"
+        # ✅ Square footage is EXTRACTED but NOT REQUIRED - keep properties even without sqft
+        # (can still use price/sqft calculation if available, but don't reject for missing sqft)
         
         # Must have bedrooms and bathrooms (check for None, NaN, or negative values)
         bedrooms = prop.get('bedrooms')
@@ -247,15 +252,18 @@ class DataPreprocessorAgent:
         if bathrooms is None or bathrooms == '' or (isinstance(bathrooms, (int, float)) and bathrooms <= 0):
             return "missing_or_invalid_bathrooms"
         
-        # Check bedroom constraints (must be within +/- 1.5 of target)
+        # ✅ STRICT MATCHING: Bedrooms and bathrooms must match EXACTLY or be rejected
+        # Do NOT accept 3bed/3bath for a 4bed/4bath property - this distorts valuation!
         if target_beds is not None:
-            if bedrooms < target_beds - 1.5 or bedrooms > target_beds + 1.5:
-                return f"bedrooms_out_of_range_{bedrooms}_vs_target_{target_beds}"
+            # Allow ±1 tolerance on bedrooms (per user request - similarity is sqft-based)
+            if bedrooms < target_beds - 1 or bedrooms > target_beds + 1:
+                return f"bedrooms_mismatch_{bedrooms}bed_vs_target_{target_beds}bed"
         
-        # Check bathroom constraints (must be within +/- 1.5 of target)
+        # ✅ BATHROOM TOLERANCE: Allow ±1 on bathrooms (similarity is sqft-based)
         if target_baths is not None:
-            if bathrooms < target_baths - 1.5 or bathrooms > target_baths + 1.5:
-                return f"bathrooms_out_of_range_{bathrooms}_vs_target_{target_baths}"
+            # Allow ±1 tolerance on bathrooms
+            if bathrooms < target_baths - 1 or bathrooms > target_baths + 1:
+                return f"bathrooms_mismatch_{bathrooms}bath_vs_target_{target_baths}bath"
         
         # ✅ UPDATED: Don't exclude properties for state info - use them for market analysis!
         # State filtering is now OPTIONAL - we want ALL data for cost-per-sqft calculations
@@ -358,6 +366,8 @@ class DataPreprocessorAgent:
         print()
         
         print(f"   🎯 Calculating similarity scores for {len(sold_homes)} properties...")
+        print(f"   🏠 BED/BATH MATCH: All comparables filtered to exact matches")
+        print(f"   📅 RECENCY: Recently sold properties ranked highest\n")
         
         for home in sold_homes:
             similarity_score = self._calculate_similarity(home, target)
@@ -394,53 +404,55 @@ class DataPreprocessorAgent:
         return sold_homes
     
     def _calculate_similarity(self, comp: Dict, target: Dict) -> float:
-        """Calculate similarity score (0-1) between comp and target"""
+        """
+        Calculate similarity score (0-1) between comp and target
+        
+        Factors:
+        - Bedrooms & bathrooms are EXACT MATCH (already filtered, but verified here)
+        - Recency is PRIMARY: More recent sales are more relevant to current market
+        - Square footage variations are normal; no penalty applied
+        """
         
         score = 1.0
         
-        # Compare square footage (weight: 0.4)
-        if comp.get('living_area_sqft') and target.get('sqft'):
-            sqft_diff = abs(comp['living_area_sqft'] - target['sqft']) / target['sqft']
-            if sqft_diff < 0.1:
-                score *= 1.0
-            elif sqft_diff < 0.2:
-                score *= 0.8
-            elif sqft_diff < 0.3:
-                score *= 0.6
-            else:
-                score *= 0.4
-        
-        # Compare bedrooms (weight: 0.2)
+        # ✅ BEDROOMS - MUST be exact match (should already be filtered)
         if comp.get('bedrooms') and target.get('bedrooms'):
             bed_diff = abs(comp['bedrooms'] - target['bedrooms'])
             if bed_diff == 0:
-                score *= 1.0
-            elif bed_diff == 1:
-                score *= 0.8
+                score *= 1.0  # Exact match
             else:
-                score *= 0.5
+                score *= 0.8  # Minor penalty if mismatch (shouldn't happen due to filtering)
         
-        # Compare bathrooms (weight: 0.2)
+        # ✅ BATHROOMS - MUST be exact match (should already be filtered)
         if comp.get('bathrooms') and target.get('bathrooms'):
             bath_diff = abs(comp['bathrooms'] - target['bathrooms'])
             if bath_diff == 0:
-                score *= 1.0
-            elif bath_diff <= 0.5:
-                score *= 0.9
+                score *= 1.0  # Exact match
             else:
-                score *= 0.7
+                score *= 0.8  # Minor penalty if mismatch (shouldn't happen due to filtering)
         
-        # Recency bonus (weight: 0.2)
-        if comp.get('date_sold'):
+        # ✅ RECENCY - PRIMARY RANKING FACTOR
+        # Properties sold more recently are most relevant to current market
+        if comp.get('date_sold') or comp.get('last_sold_date'):
             try:
-                sold_date = datetime.fromisoformat(comp['date_sold'])
+                sold_date_str = comp.get('date_sold') or comp.get('last_sold_date')
+                sold_date = datetime.fromisoformat(str(sold_date_str))
                 days_ago = (datetime.now() - sold_date).days
-                if days_ago < 90:
-                    score *= 1.0
+                
+                if days_ago < 30:
+                    recency_score = 1.0
+                elif days_ago < 60:
+                    recency_score = 0.95
+                elif days_ago < 90:
+                    recency_score = 0.90
                 elif days_ago < 180:
-                    score *= 0.9
+                    recency_score = 0.85
+                elif days_ago < 365:
+                    recency_score = 0.75
                 else:
-                    score *= 0.7
+                    recency_score = 0.60
+                
+                score *= recency_score
             except:
                 pass
         

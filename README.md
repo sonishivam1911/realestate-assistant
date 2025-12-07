@@ -134,8 +134,8 @@ The LLM analyzes all comparable data to generate estimates:
    - Market volatility
    - Price variance
 6. **Verdict**:
-   - UNDERPRICED: Estimated > Asking + 10%
-   - OVERPRICED: Estimated < Asking - 10%
+   - UNDERPRICED: Estimated > Asking + 10% (good deal!)
+   - OVERPRICED: Estimated < Asking - 10% (asking too much)
    - FAIR: Within ±10% of estimate
 
 ## 📈 What Gets Logged (LangSmith)
