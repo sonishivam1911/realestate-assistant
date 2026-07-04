@@ -1,0 +1,7 @@
+# Legacy Streamlit + Zillow scraper workflow (optional — not needed for CMA chat)
+# pip install -r requirements-legacy.txt
+langchain-groq>=0.2.0
+langchain-openai>=0.2.0
+streamlit>=1.39.0
+pandas>=2.0.0
+selenium>=4.0.0

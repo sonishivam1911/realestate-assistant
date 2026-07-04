@@ -1,0 +1,67 @@
+.message {
+  line-height: 1.65;
+}
+
+.user {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.role {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.userText {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.markdown h2 {
+  font-size: 18px;
+  margin: 16px 0 8px;
+}
+
+.markdown h3 {
+  font-size: 15px;
+  margin: 12px 0 6px;
+}
+
+.markdown ul {
+  margin: 8px 0 8px 20px;
+}
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border);
+  padding: 8px;
+  text-align: left;
+}
+
+.markdown a {
+  color: var(--accent);
+}
+
+.reasoning {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.reasoning pre {
+  white-space: pre-wrap;
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border-radius: 8px;
+}

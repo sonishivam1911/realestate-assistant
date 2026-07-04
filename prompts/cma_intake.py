@@ -1,0 +1,29 @@
+"""CMA intake — parse address and property details from user message."""
+
+INTAKE_SYSTEM = """You extract structured property and CMA request data from user messages.
+Return valid JSON only. No markdown."""
+
+INTAKE_USER = """Parse this real estate CMA request:
+
+"{user_message}"
+
+Return JSON:
+{{
+  "address": "full street address",
+  "city": "city or null",
+  "state": "2-letter state or null",
+  "zipcode": "5-digit zip or null",
+  "radius_miles": 5,
+  "property": {{
+    "bedrooms": null,
+    "bathrooms": null,
+    "sqft": null,
+    "year_built": null,
+    "property_type": "single_family|townhouse|condo|multi_family|other",
+    "asking_price": null
+  }},
+  "intent": "cma|market_analysis|general",
+  "timeframe_months": 3
+}}
+
+Default radius_miles to 5 if not specified. Default timeframe_months to 3 for sold comps."""

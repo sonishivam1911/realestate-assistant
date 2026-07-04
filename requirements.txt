@@ -1,0 +1,10 @@
+# CMA v2 — chat API + LangGraph fan-out + OpenRouter
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+ai-sdk-stream-python>=0.4.0
+python-dotenv>=1.0.0
+requests>=2.32.0
+psycopg2-binary>=2.9.9
+langgraph>=0.2.0
+langchain-core>=0.3.0
+json-repair>=0.30.0

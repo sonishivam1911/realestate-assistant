@@ -1,0 +1,56 @@
+# Merge into homelab-contabo/docker-compose.yml (same pattern as minaki_api).
+# Build context on VPS: rsync realestate-assistant → ./sources/cma-assistant
+#
+# DNS (add A record → VPS IP):
+#   cma.minaki.me        → frontend
+#   cma-api.minaki.me    → FastAPI (optional direct API access)
+
+  cma_api:
+    build:
+      context: .
+      dockerfile: images/cma-assistant/Dockerfile.api
+      args:
+        CMA_SOURCE: ${CMA_BUILD_CONTEXT:-./sources/cma-assistant}
+    container_name: cma_api
+    restart: unless-stopped
+    networks:
+      - web
+      - internal
+    depends_on:
+      supabase_db:
+        condition: service_healthy
+    env_file:
+      - ${CMA_ENV_FILE:-./sources/cma-assistant/.env}
+    environment:
+      POSTGRES_URI: postgresql://postgres:${POSTGRES_PASSWORD}@supabase_db:5432/postgres
+      AUTO_MIGRATE: "true"
+      CORS_ORIGINS: https://cma.${DOMAIN}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.cma_api.rule=Host(`cma-api.${DOMAIN}`)
+      - traefik.http.routers.cma_api.entrypoints=websecure
+      - traefik.http.routers.cma_api.tls.certresolver=letsencrypt
+      - traefik.http.services.cma_api.loadbalancer.server.port=8080
+
+  cma_frontend:
+    build:
+      context: .
+      dockerfile: images/cma-assistant/Dockerfile.frontend
+      args:
+        CMA_SOURCE: ${CMA_BUILD_CONTEXT:-./sources/cma-assistant}
+        BACKEND_URL: http://cma_api:8080
+    container_name: cma_frontend
+    restart: unless-stopped
+    networks:
+      - web
+      - internal
+    depends_on:
+      - cma_api
+    environment:
+      BACKEND_URL: http://cma_api:8080
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.cma_frontend.rule=Host(`cma.${DOMAIN}`)
+      - traefik.http.routers.cma_frontend.entrypoints=websecure
+      - traefik.http.routers.cma_frontend.tls.certresolver=letsencrypt
+      - traefik.http.services.cma_frontend.loadbalancer.server.port=3000
