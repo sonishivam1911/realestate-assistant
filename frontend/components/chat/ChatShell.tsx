@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Composer } from "@/components/chat/Composer";
 import { EmailChip } from "@/components/chat/EmailChip";
 import { MessageList } from "@/components/chat/MessageList";
@@ -49,6 +49,14 @@ export function ChatShell() {
   const hasEmail = isValidEmail(settings.email);
   const emailDeliveryOn = settings.emailDeliveryEnabled;
 
+  // useChat keeps the first transport instance — read live values via refs at send time.
+  const settingsRef = useRef(settings);
+  const conversationIdRef = useRef(conversationId);
+  const radiusMilesRef = useRef(radiusMiles);
+  settingsRef.current = settings;
+  conversationIdRef.current = conversationId;
+  radiusMilesRef.current = radiusMiles;
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -58,14 +66,14 @@ export function ChatShell() {
             ...body,
             messages,
             id,
-            conversation_id: conversationId ?? id,
-            radius_miles: radiusMiles,
-            user_email: settings.email.trim() || undefined,
-            email_delivery_enabled: settings.emailDeliveryEnabled,
+            conversation_id: conversationIdRef.current ?? id,
+            radius_miles: radiusMilesRef.current,
+            user_email: settingsRef.current.email.trim() || undefined,
+            email_delivery_enabled: settingsRef.current.emailDeliveryEnabled,
           },
         }),
       }),
-    [conversationId, radiusMiles, settings],
+    [],
   );
 
   const { messages, sendMessage, status, stop, setMessages } = useChat({

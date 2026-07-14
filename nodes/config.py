@@ -2,6 +2,12 @@
 
 import os
 
+from services.cma_constants import (
+    DEFAULT_OUTER_RADIUS_MILES,
+    DEFAULT_TIMEFRAME_MONTHS,
+    PRIMARY_RADIUS_MILES as DEFAULT_PRIMARY_RADIUS_MILES,
+)
+
 # Research: cheapest with Exa web search
 MODEL_RESEARCH = os.getenv("CMA_MODEL_RESEARCH", "deepseek/deepseek-v4-flash")
 
@@ -15,5 +21,10 @@ MODEL_SYNTHESIS = os.getenv("CMA_MODEL_SYNTHESIS", "deepseek/deepseek-v4-pro")
 # Kimi alternative if you want tool-heavy orchestration:
 # CMA_MODEL_ORCHESTRATOR=moonshotai/kimi-k2  ($0.57/$2.30 — use only if tool loops fail on Flash)
 
-TIMEFRAME_MONTHS = int(os.getenv("CMA_TIMEFRAME_MONTHS", "3"))
-DEFAULT_RADIUS_MILES = float(os.getenv("CMA_DEFAULT_RADIUS_MILES", "5"))
+TIMEFRAME_MONTHS = int(os.getenv("CMA_TIMEFRAME_MONTHS", str(DEFAULT_TIMEFRAME_MONTHS)))
+DEFAULT_RADIUS_MILES = float(
+    os.getenv("CMA_DEFAULT_RADIUS_MILES", str(DEFAULT_OUTER_RADIUS_MILES))
+)
+PRIMARY_RADIUS_MILES = float(
+    os.getenv("CMA_PRIMARY_RADIUS_MILES", str(DEFAULT_PRIMARY_RADIUS_MILES))
+)

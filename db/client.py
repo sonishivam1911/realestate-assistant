@@ -4,6 +4,7 @@ import os
 import uuid
 from contextlib import contextmanager
 from datetime import date
+from pathlib import Path
 from typing import Any, Generator
 
 import psycopg2
@@ -11,14 +12,47 @@ import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
+_RESOLVED_URI: str | None = None
+
+
+def _read_homelab_postgres_password() -> str:
+    """Fallback: same password file as homelab-contabo / minaki api/.env."""
+    homelab_dotenv = os.getenv("HOMELAB_DOTENV")
+    if homelab_dotenv:
+        path = Path(homelab_dotenv)
+    else:
+        path = Path(__file__).resolve().parents[1].parent / "homelab-contabo" / ".env"
+    if not path.is_file():
+        return ""
+    for line in path.read_text().splitlines():
+        if line.startswith("POSTGRES_PASSWORD="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def _build_tunneled_contabo_uri() -> str:
+    local_port = os.getenv("LOCAL_PG_PORT", "15432")
+    password = _read_homelab_postgres_password()
+    if not password:
+        return ""
+    return f"postgresql://postgres:{password}@127.0.0.1:{local_port}/postgres"
+
 
 def _postgres_uri() -> str:
-    return (
-        os.getenv("POSTGRES_URI")
-        or os.getenv("POSTGRES_URI_CONTABO")
-        or os.getenv("POSTGRES_URI_HOMELAB")
-        or os.getenv("DATABASE_URL", "")
+    global _RESOLVED_URI
+    if _RESOLVED_URI:
+        return _RESOLVED_URI
+
+    uri = (
+        (os.getenv("POSTGRES_URI_CONTABO") or "").strip()
+        or (os.getenv("POSTGRES_URI_HOMELAB") or "").strip()
+        or (os.getenv("POSTGRES_URI") or "").strip()
+        or (os.getenv("DATABASE_URL") or "").strip()
+        or _build_tunneled_contabo_uri()
     )
+    if uri:
+        _RESOLVED_URI = uri
+    return uri
 
 
 @contextmanager

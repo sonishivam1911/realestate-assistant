@@ -14,19 +14,22 @@ class CMAState(TypedDict, total=False):
     user_message: str
     assistant_message: str
 
-    # Intake
+    # Intake + subject enrichment
     intake: dict[str, Any]
     target_property: dict[str, Any]
     geo: dict[str, Any]
     radius_miles: float
+    primary_radius_miles: float
     timeframe_months: int
     search_context: str
+    subject_enrichment: dict[str, Any]
 
     # Fan-out research branches (written by parallel nodes)
     comp_research: dict[str, Any]
     market_pulse: dict[str, Any]
     macro_context: dict[str, Any]
 
+    enrich_citations: Annotated[list[dict], _merge_lists]
     comp_citations: Annotated[list[dict], _merge_lists]
     market_citations: Annotated[list[dict], _merge_lists]
     macro_citations: Annotated[list[dict], _merge_lists]

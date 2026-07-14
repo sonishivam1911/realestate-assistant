@@ -1,7 +1,7 @@
 """
 CMA workflow with LangGraph fan-out.
 
-  intake
+  intake → subject_enrich
     ├─[Send]─► comp_research  ─┐
     ├─[Send]─► market_pulse   ─┼─► merge_research ─► synthesis ─► END
     └─[Send]─► macro_context  ─┘
@@ -17,6 +17,7 @@ from nodes.intake import intake_node
 from nodes.macro_context import macro_context_node
 from nodes.market_pulse import market_pulse_node
 from nodes.merge_research import merge_research_node
+from nodes.subject_enrich import subject_enrich_node
 from nodes.synthesis import synthesis_node
 from workflow.cma_state import CMAState
 
@@ -31,12 +32,6 @@ def _fan_out_research(state: CMAState) -> list[Send]:
     ]
 
 
-def _after_intake(state: CMAState) -> str:
-    if state.get("status") == "failed":
-        return "synthesis"
-    return "fan_out"
-
-
 class CMAGraph:
     def __init__(self):
         self.graph = self._build().compile()
@@ -45,6 +40,7 @@ class CMAGraph:
         g = StateGraph(CMAState)
 
         g.add_node("intake", intake_node)
+        g.add_node("subject_enrich", subject_enrich_node)
         g.add_node("comp_research", comp_research_node)
         g.add_node("market_pulse", market_pulse_node)
         g.add_node("macro_context", macro_context_node)
@@ -52,7 +48,12 @@ class CMAGraph:
         g.add_node("synthesis", synthesis_node)
 
         g.set_entry_point("intake")
-        g.add_conditional_edges("intake", _fan_out_research, ["comp_research", "market_pulse", "macro_context", "synthesis"])
+        g.add_edge("intake", "subject_enrich")
+        g.add_conditional_edges(
+            "subject_enrich",
+            _fan_out_research,
+            ["comp_research", "market_pulse", "macro_context", "synthesis"],
+        )
         g.add_edge("comp_research", "merge_research")
         g.add_edge("market_pulse", "merge_research")
         g.add_edge("macro_context", "merge_research")
