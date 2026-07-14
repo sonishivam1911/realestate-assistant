@@ -13,6 +13,29 @@ from workflow.cma_graph import CMAGraph
 logger = logging.getLogger(__name__)
 
 
+def resolve_user_email(
+    user_email: str | None,
+    conversation_id: str | None,
+) -> str | None:
+    """Prefer request email; fall back to conversation record when missing."""
+    normalized = (user_email or "").strip()
+    if normalized and is_valid_email(normalized):
+        return normalized
+    if not conversation_id:
+        return None
+    try:
+        from db.client import get_conversation
+
+        row = get_conversation(conversation_id)
+        if row:
+            stored = (row.get("user_email") or "").strip()
+            if stored and is_valid_email(stored):
+                return stored
+    except Exception as e:
+        logger.warning("Conversation email lookup skipped: %s", e)
+    return None
+
+
 def _extract_text_from_message(message: dict[str, Any]) -> str:
     parts = message.get("parts") or []
     if parts:
@@ -38,7 +61,9 @@ async def stream_cma_chat(
     email_delivery_enabled: bool = True,
     ctx: StreamContext,
 ) -> None:
-    if email_delivery_enabled and (not user_email or not is_valid_email(user_email)):
+    user_email = resolve_user_email(user_email, conversation_id)
+
+    if email_delivery_enabled and not user_email:
         await ctx.write_text(
             "Please add your **email address** in **Settings** and enable "
             "**Email me chat reports** before requesting a CMA."
@@ -58,11 +83,14 @@ async def stream_cma_chat(
     await _save_user_message(cid, user_text)
 
     await ctx.write_reasoning(
-        f"Starting CMA — {radius_miles}mi radius, 3-month comps."
+        f"Starting CMA — {radius_miles}mi outer radius, 2mi primary, "
+        "same-style preference with fallbacks + adjustments."
         + (f" Reports → {user_email}" if email_delivery_enabled and user_email else "")
     )
     await ctx.new_step()
-    await ctx.write_reasoning("Step 1/3: Intake — parsing address and geocoding…")
+    await ctx.write_reasoning(
+        "Step 1/4: Intake + subject enrich — address, style, sqft, amenities…"
+    )
 
     graph = CMAGraph()
     state = await asyncio.to_thread(
@@ -78,8 +106,12 @@ async def stream_cma_chat(
         return
 
     await ctx.new_step()
+    style = (state.get("target_property") or {}).get("architectural_style") or "unknown"
+    primary_count = len((state.get("comp_research") or {}).get("primary_comps") or [])
+    supporting_count = len((state.get("comp_research") or {}).get("supporting_comps") or [])
     await ctx.write_reasoning(
-        "Step 2/3: Parallel research — comps, market pulse, macro (fan-out)."
+        "Step 2/4: Research complete — "
+        f"style={style}, primary comps={primary_count}, supporting={supporting_count}."
     )
 
     report = state.get("cma_report") or {}
@@ -91,7 +123,11 @@ async def stream_cma_chat(
     )
 
     await ctx.new_step()
-    await ctx.write_reasoning("Step 3/3: Writing client-ready CMA report…")
+    await ctx.write_reasoning(
+        "Step 3/4: Synthesis — adjustment grid + low/mid/high from adjusted comps…"
+    )
+    await ctx.new_step()
+    await ctx.write_reasoning("Step 4/4: Streaming client-ready CMA report…")
     await ctx.new_step()
 
     chunk_size = int(os.getenv("CMA_STREAM_CHUNK_SIZE", "120"))
@@ -123,8 +159,9 @@ async def stream_cma_chat(
         recommended_price=price_str,
     )
 
-    if sent and run_id:
-        await asyncio.to_thread(_mark_email_sent, run_id)
+    if sent:
+        if run_id:
+            await asyncio.to_thread(_mark_email_sent, run_id)
         await ctx.write_text(
             f"\n\n---\n📧 **Report sent to {user_email}**"
         )

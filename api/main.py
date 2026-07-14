@@ -3,6 +3,8 @@
 import logging
 import os
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes.chat import router as chat_router
 from api.routes.conversations import router as conversations_router
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,8 +39,14 @@ app.include_router(conversations_router, prefix="/api")
 def startup():
     if os.getenv("AUTO_MIGRATE", "true").lower() in ("1", "true", "yes"):
         try:
-            from db.client import ensure_schema
+            from db.client import _postgres_uri, ensure_schema
 
+            if not _postgres_uri():
+                logger.warning(
+                    "Schema migration skipped: set POSTGRES_URI_CONTABO in .env "
+                    "(127.0.0.1:15432) and run ./start_dev.sh with tunnel"
+                )
+                return
             ensure_schema()
             logger.info("Postgres realestate schema ready")
         except Exception as e:
